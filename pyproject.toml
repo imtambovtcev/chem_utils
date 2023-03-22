@@ -7,7 +7,13 @@ readme = "README.md"
 packages = [{include = "chem_utils"}]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.8"
+ase = "^3.22.1"
+matplotlib = "^3.7.1"
+pyvista = "^0.38.5"
+networkx = "^3.0"
+pathlib = "^1.0.1"
+numpy = "^1.24.2"
 
 
 [tool.poetry.group.dev.dependencies]
