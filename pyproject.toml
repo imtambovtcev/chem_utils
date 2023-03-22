@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "chem-utils"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["ivan <imtambovcev@gmail.com>"]
 readme = "README.md"
