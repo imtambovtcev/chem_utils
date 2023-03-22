@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "chem-utils"
+version = "0.1.0"
+description = ""
+authors = ["ivan <imtambovcev@gmail.com>"]
+readme = "README.md"
+packages = [{include = "chem_utils"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
