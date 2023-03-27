@@ -14,7 +14,7 @@ def allxyz_to_xyz(input):
         f.close()
 
 
-if __name__ == "__main__":
+def main():
     _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
     print(_input)
     _input = [Path(d) for d in _input]
@@ -27,3 +27,7 @@ if __name__ == "__main__":
             input.append(d)
     print(input)
     allxyz_to_xyz(input)
+
+
+if __name__ == "__main__":
+    main()

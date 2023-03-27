@@ -7,9 +7,6 @@ from ase.io import read, write
 from ase.parallel import paropen
 import ase.units as units
 
-from gpaw import GPAW, restart
-from gpaw.mpi import world, rank, MASTER
-
 import sys
 from pathlib import Path
 
@@ -48,6 +45,9 @@ if __name__ == "__main__":
     directory.mkdir(parents=True, exist_ok=True)
     # restart calculation from gpw file
     # don't write a new txt file
+
+    from gpaw import restart
+
     atoms, calc = restart(str(file), txt=None)
     # generate cube files if orbitals
     # orbital files written: from HOMO+i to LUMO+a

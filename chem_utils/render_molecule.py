@@ -42,22 +42,23 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
 
     # start_time = time.perf_counter()
     # render bonds
-    pairs = [(a, b) for idx, a in enumerate(symb) for b in symb[idx + 1:]]+[(i, i) for i in symb] if len(symb) > 1 else [(symb[0], symb[0])]
-
-
+    pairs = [(a, b) for idx, a in enumerate(symb) for b in symb[idx + 1:]]+[(i, i)
+                                                                            for i in symb] if len(symb) > 1 else [(symb[0], symb[0])]
 
     ana = Analysis(atoms)
 
     if show_hydrogens and show_hydrogen_bonds:
         # print(ana.get_bonds('F', 'H', unique=True))
-        h_coords=atoms.get_positions()[[a=='H' for a in atoms.get_chemical_symbols()]]
-        f_coords=atoms.get_positions()[[a=='F' for a in atoms.get_chemical_symbols()]]
+        h_coords = atoms.get_positions(
+        )[[a == 'H' for a in atoms.get_chemical_symbols()]]
+        f_coords = atoms.get_positions(
+        )[[a == 'F' for a in atoms.get_chemical_symbols()]]
         for h_coord in h_coords:
             for f_coord in f_coords:
-                if np.linalg.norm(h_coord-f_coord)<2.2:
-                    line=pv.Line(h_coord, f_coord)
-                    plotter.add_mesh(line, color='white', opacity=alpha, line_width=2)
-
+                if np.linalg.norm(h_coord-f_coord) < 2.2:
+                    line = pv.Line(h_coord, f_coord)
+                    plotter.add_mesh(line, color='white',
+                                     opacity=alpha, line_width=2)
 
     for bond_type in pairs:
 
@@ -69,10 +70,9 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                 atom_a = atoms[bond[0]].position
                 atom_b = atoms[bond[1]].position
                 cylinder = pv.Cylinder(center=0.5*(atom_a+atom_b), direction=atom_b -
-                                        atom_a, height=np.linalg.norm(atom_b-atom_a), radius=0.05, resolution=10)
+                                       atom_a, height=np.linalg.norm(atom_b-atom_a), radius=0.05, resolution=10)
                 plotter.add_mesh(cylinder, color='#D3D3D3',
-                                    smooth_shading=True, opacity=alpha)
-
+                                 smooth_shading=True, opacity=alpha)
 
 
 def render_molecule_from_file(filename, save=None):
@@ -80,7 +80,8 @@ def render_molecule_from_file(filename, save=None):
     for i, atoms in enumerate(path):
         p = pv.Plotter(notebook=True)
         p.set_background('black')
-        render_molecule(plotter=p, atoms=atoms, atoms_settings=default_atoms_settings)
+        render_molecule(plotter=p, atoms=atoms,
+                        atoms_settings=default_atoms_settings)
         # p.view_vector((-1, 0, 0), (0, 1, 0))
         if save is not None:
             p.show(screenshot=save[:-4]+'_{}'.format(i) +
@@ -90,7 +91,7 @@ def render_molecule_from_file(filename, save=None):
                    '_{}.png'.format(i), window_size=[1000, 1000])
 
 
-if __name__ == "__main__":
+def main():
     _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
     print(_input)
     _input = [Path(d) for d in _input]
@@ -103,3 +104,7 @@ if __name__ == "__main__":
             input.append(d)
     print(input)
     [render_molecule_from_file(str(p)) for p in input]
+
+
+if __name__ == "__main__":
+    main()

@@ -108,6 +108,10 @@ def check_and_copy_path(pathname, save_file):
     xyz_to_allxyz([Path(save_file)])
 
 
-if __name__ == "__main__":
+def main():
     pathname, save_file = sys.argv[1]
     check_and_copy_path(pathname, save_file)
+
+
+if __name__ == "__main__":
+    main()

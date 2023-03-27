@@ -106,6 +106,7 @@ def neb_plot(file, show=True, save=None, title=None):
             plt.title(title)
         plt.tight_layout()
         if save:
+            print('Saving... ')
             if isinstance(save, str):
                 plt.savefig(save)
             else:
@@ -114,12 +115,13 @@ def neb_plot(file, show=True, save=None, title=None):
         if show:
             plt.show()
         return fig, ax
-    except:
+    except Exception as e:
+        print(e)
         fig, ax = plt.subplots()
         return fig, ax
 
 
-if __name__ == "__main__":
+def main():
     _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
     print(_input)
     _input = [Path(d) for d in _input]
@@ -135,4 +137,8 @@ if __name__ == "__main__":
         else:
             input.append(d)
     print(input)
-    [neb_plot(file, save=True, show=False) for file in input]
+    [neb_plot(file, save=True, show=True) for file in input]
+
+
+if __name__ == "__main__":
+    main()

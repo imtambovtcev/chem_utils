@@ -22,3 +22,16 @@ pre-commit = "^3.2.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+neb_plot = 'chem_utils.neb_plot:main'
+allxyz_from_xyz = 'chem_utils.allxyz_from_xyz:main'
+check_and_copy_path = 'chem_utils.check_and_copy_path:main'
+format_xyz = 'chem_utils.format_xyz:main'
+get_image = 'chem_utils.get_image:main'
+get_orb = 'chem_utils.get_orb:main'
+mirror_xyz = 'chem_utils.mirror_xyz:main'
+molecular_distance = 'chem_utils.molecular_distance:main'
+render_molecule = 'chem_utils.render_molecule:main'
+rotate_path = 'chem_utils.rotate_path:main'
+xyz_from_allxyz = 'chem_utils.xyz_from_allxyz:main'

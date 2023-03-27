@@ -21,9 +21,13 @@ def get_image(p, save, n=0):
     format_xyz_file(save)
 
 
-if __name__ == "__main__":
+def main():
     p = sys.argv[-3]
     save = sys.argv[-2]
     n = int(sys.argv[-1])
     print(f'{p = } {save = } {n = }')
     get_image(p, save, n=n)
+
+
+if __name__ == "__main__":
+    main()

@@ -83,7 +83,7 @@ def rotate_path(p, settings=None):
     write(str(p)[:-4]+'_rotated.xyz', path)
 
 
-if __name__ == "__main__":
+def main():
     _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
     print(_input)
     _input = [Path(d) for d in _input]
@@ -96,3 +96,7 @@ if __name__ == "__main__":
             input.append(d)
     print(input)
     [rotate_path(p) for p in input]
+
+
+if __name__ == "__main__":
+    main()

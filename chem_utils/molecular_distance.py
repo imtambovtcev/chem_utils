@@ -22,7 +22,7 @@ def atoms_distance(atoms_a, atoms_b, savetxt=None, return_position=False, print_
         return diff.max()
 
 
-if __name__ == "__main__":
+def main():
     file_a = Path(sys.argv[1])
     file_b = Path(sys.argv[2])
     savetxt = None if len(sys.argv) <= 3 or sys.argv[3] in [
@@ -41,3 +41,6 @@ if __name__ == "__main__":
         atoms_b = read(str(file_b))
 
     atoms_distance(atoms_a, atoms_b, savetxt)
+
+if __name__ == "__main__":
+    main()
