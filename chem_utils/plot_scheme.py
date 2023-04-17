@@ -29,7 +29,7 @@ def plot_scheme(df, ratio, save=None, show=True, show_x_axis=False):
         # print(index, row.position_x,row.position_y)
         img = Image.open('{}/scheme_with_rate.png'.format(index))
         ax.imshow(img, extent=[row.position_x-0.5*ratio, row.position_x+0.5*ratio,
-                  row.position_y-0.5, row.position_y+0.5], aspect=1, interpolation='sinc')
+                  row.position_y-0.5, row.position_y+0.5], aspect=1) #, interpolation='sinc'
     # ax.set_axis_off()
 
     for index, row in df.iterrows():
@@ -91,29 +91,15 @@ def plot_scheme(df, ratio, save=None, show=True, show_x_axis=False):
         ax.set_xticklabels([])
         ax.set_xticks([])
 
-    fig.set_size_inches(9*(df.position_x.max()- df.position_x.min()+ratio), 9*(df.position_y.max()-df.position_y.min()+1))
+    fig.set_size_inches(9*(df.position_x.max() - df.position_x.min()+ratio),
+                        9*(df.position_y.max()-df.position_y.min()+1))
 
     # fig.patch.set_facecolor('xkcd:light grey')
     if save is not None:
-        plt.savefig(save, bbox_inches="tight", dpi = 100)
+        plt.savefig(save, bbox_inches="tight", dpi=100)
     if show:
         plt.show()
     return fig, ax
-
-
-def initial_guess(df):
-    groups = [df.id[df.group == i] for i in set(df.group.values)]
-    G = nx.Graph()
-    for group in groups:
-        H = nx.complete_graph(group)
-        # print(H.nodes)
-        G = nx.disjoint_union(G, H)
-    # print(G)
-    pos = nx.spring_layout(G, k=1.2, seed=np.random.seed(seed=0), dim=2)
-    # print(pos)
-    positions = np.array(list(pos.values()))*5
-    # return positions[:,0], df.log_t.values-0.5
-    return np.round(positions[:, 0], 2), np.round(positions[:, 1], 2)
 
 
 def elliptic_distance(a_x, a_y, b_x, b_y, w, h):
@@ -219,7 +205,7 @@ def group_enegry(df, ratio, group, x=None):
 
 def energy_intergroup_distance(df, ratio, x=None):
     if x is not None:
-        rx= list(itertools.accumulate(x))
+        rx = list(itertools.accumulate(x))
         # print(list(rx))
         # print(list(set(df.group.values)))
         # print(len(list(rx)), len(list(set(df.group.values))))
@@ -227,7 +213,7 @@ def energy_intergroup_distance(df, ratio, x=None):
         for offset, group in zip(list(rx), list(set(df.group.values))):
             # print(f'{offset = } {group = }')
             df.loc[df.group == group, 'position_x'] += offset
-    
+
     energy = 0.
     for (i, row_i), (j, row_j) in itertools.combinations(df.iterrows(), 2):
         if row_i.group != row_j.group:
@@ -240,13 +226,44 @@ def energy_intergroup_distance(df, ratio, x=None):
     # print(f'{energy}')
     # print(f'{df.position_x.max() = } {df.position_x.min() = }')
     # print(100*((df.position_x.max()-df.position_x.min())/(len(set(df.group.values))*3))**4)
-    energy += 100*((df.position_x.max()-df.position_x.min())/(len(set(df.group.values))*3))**4
+    energy += 100*((df.position_x.max()-df.position_x.min()) /
+                   (len(set(df.group.values))*3))**4
 
     if x is not None:
         for offset, group in zip(list(rx), list(set(df.group.values))):
             df.loc[df.group == group, 'position_x'] -= offset
     # print(f'{energy = }')
     return energy
+
+
+def full_energy(df, ratio):
+    energy = 0.0
+    for group in set(df.group.values):
+        energy += group_enegry(df, ratio, group)
+    energy += energy_intergroup_distance(df, ratio)
+    return energy
+
+
+def initial_guess(df):
+    for i, group in enumerate(list(set(df.group.values))):
+        df.loc[df.group == group, 'position_x'] = 2 * \
+            (np.random.rand(len(df.loc[df.group == group]))-0.5)+i*5
+    df['position_y'] = df.log_t.values
+
+
+def initial_guess_old(df):
+    groups = [df.id[df.group == i] for i in set(df.group.values)]
+    G = nx.Graph()
+    for group in groups:
+        H = nx.complete_graph(group)
+        # print(H.nodes)
+        G = nx.disjoint_union(G, H)
+    # print(G)
+    pos = nx.spring_layout(G, k=1.2, seed=np.random.seed(seed=0), dim=2)
+    # print(pos)
+    positions = np.array(list(pos.values()))*5
+    return np.round(positions[:, 0], 2), df.log_t.values
+    # return np.round(positions[:, 0], 2), np.round(positions[:, 1], 2)
 
 
 def minimize_groups(df, ratio, method='BFGS'):
@@ -263,9 +280,9 @@ def minimize_groups(df, ratio, method='BFGS'):
 
 def minimize_intergroup_distance(df, ratio, method='BFGS'):
     res = minimize(lambda x: energy_intergroup_distance(df, ratio, x),
-                    np.zeros(len(set(df.group.values))), tol=0.01, method=method)
+                   np.zeros(len(set(df.group.values))), tol=0.01, method=method)
     print(res)
-    rx=list(itertools.accumulate(res.x))
+    rx = list(itertools.accumulate(res.x))
     for offset, group in zip(rx, set(df.group.values)):
         print(f'{offset = } {group = }')
         df.loc[df.group == group, 'position_x'] += offset
@@ -273,17 +290,18 @@ def minimize_intergroup_distance(df, ratio, method='BFGS'):
 
 def minimize_scheme(df, ratio, save='fig.pdf', method='BFGS'):
     df.index = df.id.values
-    df['position_x'], df['position_y'] = initial_guess(df)
+    # df['position_x'], df['position_y'] = initial_guess(df)
+    initial_guess(df)
     plot_scheme(df, ratio, save, show=True)
     minimize_groups(df, ratio, method=method)
     print(f'{energy_intergroup_distance(df, ratio) = }')
     # plot_scheme(df, ratio, save, show=True)
     for offset, group in zip(5*np.arange(len(set(df.group.values))), set(df.group.values)):
-            df.loc[df.group == group, 'position_x'] += offset-df.loc[group].position_x
+        df.loc[df.group == group, 'position_x'] += offset - \
+            df.loc[group].position_x
     print(f'{energy_intergroup_distance(df, ratio) = }')
     plot_scheme(df, ratio, save, show=True)
     minimize_intergroup_distance(df, ratio, method=method)
     print(f'{energy_intergroup_distance(df, ratio) = }')
     # print(df)
     return df
-
