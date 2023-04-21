@@ -75,20 +75,24 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                                  smooth_shading=True, opacity=alpha)
 
 
-def render_molecule_from_file(filename, save=None):
-    path = read(filename, index=':')
+def render_molecule_from_path(path, save=False):
     for i, atoms in enumerate(path):
         p = pv.Plotter(notebook=True)
         p.set_background('black')
         render_molecule(plotter=p, atoms=atoms,
                         atoms_settings=default_atoms_settings)
         # p.view_vector((-1, 0, 0), (0, 1, 0))
-        if save is not None:
-            p.show(screenshot=save[:-4]+'_{}'.format(i) +
-                   save[-4:], window_size=[1000, 1000])
+        if save:
+            p.show(screenshot=save, window_size=[1000, 1000])
         else:
-            p.show(screenshot=filename[:-4] +
-                   '_{}.png'.format(i), window_size=[1000, 1000])
+            return p
+
+
+def render_molecule_from_file(filename, save=None):
+    path = read(filename, index=':')
+    s = filename[:-4] + '_{}.png'.format(
+        i) if save is None else save[:-4]+'_{}'.format(i) + save[-4:]
+    render_molecule_from_atoms(path, s)
 
 
 def main():
