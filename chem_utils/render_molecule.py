@@ -75,39 +75,58 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                                  smooth_shading=True, opacity=alpha)
 
 
-def render_molecule_from_path(path, save=False):
-    for i, atoms in enumerate(path):
-        p = pv.Plotter(notebook=True)
-        p.set_background('black')
+def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False):
+    if plotter is None:
+        plotter = pv.Plotter(notebook=notebook)
+        plotter.set_background('black')
+    render_molecule(plotter=plotter, atoms=atoms,
+                    atoms_settings=atoms_settings, alpha=alpha)
+    if save is not None:
+        plotter.show(screenshot=save, window_size=[
+                     1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
+    else:
+        return plotter
+
+
+def render_molecule_from_path(path, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0):
+    if save is None:
+        save = [None for _ in path]
+    if plotter is None:
+        plotter = [None for _ in path]
+    for i, (atoms, s, p) in enumerate(zip(path, save, plotter)):
+        if p is None:
+            p = pv.Plotter(notebook=True)
+            p.set_background('black')
+
         render_molecule(plotter=p, atoms=atoms,
-                        atoms_settings=default_atoms_settings)
+                        atoms_settings=atoms_settings, alpha=alpha)
         # p.view_vector((-1, 0, 0), (0, 1, 0))
-        if save:
-            p.show(screenshot=save, window_size=[1000, 1000])
-        else:
-            return p
+        if s is not None:
+            p.show(screenshot=s, window_size=[1000, 1000], cpos=cpos)
+        # else:
+        #     return p
 
 
 def render_molecule_from_file(filename, save=None):
     path = read(filename, index=':')
-    s = filename[:-4] + '_{}.png'.format(
-        i) if save is None else save[:-4]+'_{}'.format(i) + save[-4:]
-    render_molecule_from_atoms(path, s)
+    if save is None:
+        save = [filename[:-4] + f'_{i}.png' for i in range(len(path))]
+    render_molecule_from_path(path=path, save=save)
 
 
 def main():
     _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
     print(_input)
     _input = [Path(d) for d in _input]
-    input = []
+    inp = []
     for d in _input:
         if d.is_dir():
             add = d.glob('*.xyz')
-            input.extend(add)
+            inp.extend(add)
         else:
-            input.append(d)
-    print(input)
-    [render_molecule_from_file(str(p)) for p in input]
+            inp.append(d)
+    print(inp)
+    [render_molecule_from_file(str(p)) for p in inp]
 
 
 if __name__ == "__main__":
