@@ -50,7 +50,7 @@ def neb_energy_from_ocra_interp(filename):
     return points, interpolation
 
 
-def neb_plot(file, show=True, save=None, title=None):
+def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None):
     if isinstance(file, tuple) or isinstance(file, list):
         file_interpolate, file_out = file
     else:
@@ -63,7 +63,8 @@ def neb_plot(file, show=True, save=None, title=None):
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[-1]))
         # print('Barrier = {}'.format(
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[0]))
-        fig, ax = plt.subplots()
+        if fig is None:
+            fig, ax = plt.subplots()
         interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
         points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
 
@@ -90,18 +91,19 @@ def neb_plot(file, show=True, save=None, title=None):
                 x_ts, y_ts = points['Images'].iloc[points['Energy, eV'].argmax(
                 )], points['Energy, eV'].max()
 
-        ax.plot([x_ts, x_a], [y_ts, y_ts], 'k')
-        ax.plot([x_ts, x_b], [y_ts, y_ts], 'k')
-        ax.arrow(x_a, y_a, 0, y_ts-y_a, head_width=0.01, head_length=0.03, fc='k',
-                 ec='k', length_includes_head=True)
-        ax.arrow(x_b, y_b, 0, y_ts-y_b, head_width=0.01, head_length=0.03, fc='k',
-                 ec='k', length_includes_head=True)
-        plt.text(x_a+0.02, (y_a+y_ts)/2, "{:.2f} eV".format(y_ts-y_a), size=10, rotation=90.,
-                 ha="left", va="center"
-                 )
-        plt.text(x_b-0.02, (y_b+y_ts)/2, "{:.2f} eV".format(y_ts-y_b), size=10, rotation=90.,
-                 ha="right", va="center"
-                 )
+        if sign_barriers:
+            ax.plot([x_ts, x_a], [y_ts, y_ts], 'k')
+            ax.plot([x_ts, x_b], [y_ts, y_ts], 'k')
+            ax.arrow(x_a, y_a, 0, y_ts-y_a, head_width=0.01, head_length=0.03, fc='k',
+                     ec='k', length_includes_head=True)
+            ax.arrow(x_b, y_b, 0, y_ts-y_b, head_width=0.01, head_length=0.03, fc='k',
+                     ec='k', length_includes_head=True)
+            plt.text(x_a+0.02, (y_a+y_ts)/2, "{:.2f} eV".format(y_ts-y_a), size=10, rotation=90.,
+                     ha="left", va="center"
+                     )
+            plt.text(x_b-0.02, (y_b+y_ts)/2, "{:.2f} eV".format(y_ts-y_b), size=10, rotation=90.,
+                     ha="right", va="center"
+                     )
         if title is not None:
             plt.title(title)
         plt.tight_layout()
