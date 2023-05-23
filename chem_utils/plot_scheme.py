@@ -9,6 +9,8 @@ import PIL
 from PIL import Image
 import itertools
 
+from yattag import Doc
+
 
 def curve(x): return 0.5*(3*x-x**3)
 
@@ -23,13 +25,121 @@ def arrow(x_from, x_to, y_from, y_to, invert=False):
     return 0.5*(x_to-x_from)*(x+1)+x_from, 0.5*(y_to-y_from)*(y+1)+y_from
 
 
+def html_curve(tag, x_from, x_to, y_from, y_to, x0, y0, name_from, name_to):
+    dx = x_to-x_from
+    dy = y_to-y_from
+    dx = dx if abs(dx) > 0.03 else 0.03
+    dy = dy if abs(dy) > 0.03 else 0.03
+    if dy > 1:
+        dy -= 1
+        if dx < 0:
+            dx = abs(dx)
+            with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                     style=f"width:{int(120*dx)}px;height:{int(120*abs(dy))}px;position: absolute;top:{int(120*(y0-y_to+1))}px;left: {int(120*(x_to-x0)+50)}px;"):
+                with tag('path', d=f"M 0 0 C 0 {int(0.5*100*dy)}, {int(120*dx)} {int(0.5*120*dy)}, {int(120*dx)} {int(120*abs(dy))}", stroke='red', fill="transparent"):
+                    pass
+        else:
+            with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                     style=f"width:{int(120*dx)}px;height:{int(120*abs(dy))}px;position: absolute;top:{int(120*(y0-y_to+1))}px;left: {int(120*(x_from-x0)+50)}px;"):
+                with tag('path', d=f"M 0 {int(120*abs(dy))} C 0 {int(0.5*100*dy)}, {int(120*dx)} {int(0.5*120*dy)}, {int(120*dx)} 0", stroke='red', fill="transparent"):
+                    pass
+    elif dy < -1:
+        dy = abs(dy)
+        dy -= 1
+        if dx < 0:
+            dx = abs(dx)
+            with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                     style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_from+1))}px;left: {int(120*(x_to-x0)+50)}px;"):
+                with tag('path', d=f"M {int(120*dx)} 0 C {int(120*dx)} {int(0.5*120*dy)}, 0 {int(0.5*120*dy)}, 0 {int(120*abs(dy))}", stroke='blue', fill="transparent"):
+                    pass
+        else:
+            with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                     style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_from+1))}px;left: {int(120*(x_from-x0)+50)}px;"):
+                with tag('path', d=f"M 0 0 C 0 {int(0.5*120*dy)}, {int(120*dx)} {int(0.5*120*dy)}, {int(120*dx)} {int(120*abs(dy))}", stroke='blue', fill="transparent"):
+                    pass
+    else:
+        if dx < -0.83:
+            dx = abs(dx)
+            dx -= 0.83
+            if dy > 0:
+                with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                         style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_to)+60)}px;left: {int(120*(x_to-x0)+100)}px;"):
+                    with tag('path', d=f"M {int(120*dx)} {int(120*abs(dy))} C {int(0.5*120*dx)} {int(120*abs(dy))}, {int(0.5*120*dx)} 0, 0 0", stroke='black', fill="transparent"):
+                        pass
+            else:
+                dy = abs(dy)
+                with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                         style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_from)+60)}px;left: {int(120*(x_to-x0)+100)}px;"):
+                    with tag('path', d=f"M {int(120*dx)} 0 C {int(0.5*120*dx)} 0, {int(0.5*120*dx)} {int(120*dy)}, 0 {int(120*abs(dy))}", stroke='black', fill="transparent"):
+                        pass
+        elif dx > 0.83:
+            dx -= 0.83
+            if dy > 0:
+                with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                         style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_to)+60)}px;left: {int(120*(x_from-x0)+100)}px;"):
+                    with tag('path', d=f"M {int(120*dx)} 0 C {int(0.5*120*dx)} 0, {int(0.5*120*dx)} {int(120*dy)}, 0 {int(120*abs(dy))}", stroke='black', fill="transparent"):
+                        pass
+            else:
+                dy = abs(dy)
+                with tag('svg', id=f'{int(name_from)}_{int(name_to)}',
+                         style=f"width:{int(120*dx)}px;height:{int(120*dy)}px;position: absolute;top:{int(120*(y0-y_from)+60)}px;left: {int(120*(x_from-x0)+100)}px;"):
+                    with tag('path', d=f"M 0 0 C {int(0.5*120*dx)} 0, {int(0.5*120*dx)} {int(120*dy)}, {int(120*dx)} {int(120*abs(dy))}", stroke='black', fill="transparent"):
+                        pass
+
+        else:
+            print(f'Warninig {int(name_from)}_{int(name_to)}')
+
+
+def plot_scheme_html(df, ratio, save=None, show=True, show_x_axis=False):
+    doc, tag, text = Doc().tagtext()
+    page_width_px = int(120*(df.position_x.max()-df.position_x.min()))+100+120
+    page_height_px = int(120*(df.position_y.max()-df.position_y.min()))+120+120
+
+    with tag('html'):
+        with tag("style"):
+            text(f'''
+            @page  {{
+            margin: 0;
+            size: {page_width_px}px {page_height_px}px
+            }}
+            ''')
+        with tag('body', style=f"width:{page_width_px}px;height:{page_height_px}px;"):  # border:solid 4px black;
+            # with tag('canvas', id="CanvasOfGeeks", style="border:solid 2px red;width:{}px;height:{}px;".format(int(100*(df.position_x.max()-df.position_x.min())), int(100*df.position_y.max()-df.position_y.min()))):
+            #     pass
+            x0 = df.position_x.min()-0.5
+            y0 = df.position_y.max()+0.5
+            with tag('div', id='diagram', style=f"width:{page_width_px}px;height:{page_height_px}px;"):
+                for index, row in df.iterrows():
+                    with tag('img', id=index, src='pics/{}.png'.format(index), alt=str(index),
+                             style=f"width:100px;height:120px;position: absolute;top: {int(120*(y0-row.position_y))}px;left: {int(120*(row.position_x-x0))}px;"):
+                        pass
+                for index, row in df.iterrows():
+                    if row.group != row.id:
+                        x_to = row.position_x
+                        y_to = row.position_y
+                        x_from = df.loc[int(row.group)].position_x
+                        y_from = df.loc[int(row.group)].position_y
+
+                        html_curve(tag, x_from, x_to, y_from,
+                                   y_to, x0, y0, row.group, row.id)
+
+    result = doc.getvalue()
+
+    if save is not None:
+        file = open(save, "w")
+        file.write(result)
+        file.close()
+
+    return result
+
+
 def plot_scheme(df, ratio, save=None, show=True, show_x_axis=False):
     fig, ax = plt.subplots()
     for index, row in df.iterrows():
         # print(index, row.position_x,row.position_y)
         img = Image.open('{}/scheme_with_rate.png'.format(index))
         ax.imshow(img, extent=[row.position_x-0.5*ratio, row.position_x+0.5*ratio,
-                  row.position_y-0.5, row.position_y+0.5], aspect=1) #, interpolation='sinc'
+                  row.position_y-0.5, row.position_y+0.5], aspect=1)  # , interpolation='sinc'
     # ax.set_axis_off()
 
     for index, row in df.iterrows():
@@ -151,7 +261,7 @@ def energy_x_without_attraction(a, b, ratio, scaling=1.3):
         return np.nan
 
 
-def energy_elliptic_with_attraction(a_x, a_y, b_x, b_y, ratio, minimum=2.):
+def energy_elliptic_with_attraction(a_x, a_y, b_x, b_y, ratio, minimum=1.):
     d = elliptic_distance(a_x, a_y, b_x, b_y, ratio, 1)
     return attraction(d, minimum=minimum)+repulsion(d, minimum=minimum)
 
@@ -160,7 +270,7 @@ test_energy_elliptic_with_attraction = np.vectorize(
     energy_elliptic_with_attraction, excluded=['a_x,a_y,ratio,minimum'])
 
 
-def energy_elliptic_without_attraction(a_x, a_y, b_x, b_y, ratio, minimum=2.):
+def energy_elliptic_without_attraction(a_x, a_y, b_x, b_y, ratio, minimum=1.2):
     d = elliptic_distance(a_x, a_y, b_x, b_y, ratio, 1)
     return repulsion(d, minimum=minimum)
 
@@ -169,7 +279,7 @@ test_energy_elliptic_without_attraction = np.vectorize(
     energy_elliptic_without_attraction, excluded=['a_x,a_y,ratio,minimum'])
 
 
-def energy_combined_with_attraction(a_x, a_y, b_x, b_y, ratio, minimum=2., force=1.0):
+def energy_combined_with_attraction(a_x, a_y, b_x, b_y, ratio, minimum=1.2, force=1.0):
     x = np.abs(a_x-b_x)
     y = np.abs(a_y-b_y)
     # if y > minimum:
@@ -179,26 +289,38 @@ def energy_combined_with_attraction(a_x, a_y, b_x, b_y, ratio, minimum=2., force
     return repulsion(d, minimum=minimum)+force*x
 
 
+test_energy_combined_with_attraction = np.vectorize(
+    energy_combined_with_attraction, excluded=['a_x,a_y,ratio,minimum, force'])
+
+
 def group_enegry(df, ratio, group, x=None):
+    _df = df.copy()
     if x is not None:
         # print(f'{x = }')
-        pos = x.reshape(-1, 2)
-        df.loc[df.group == group, 'position_x'] = pos[:, 0]
-        df.loc[df.group == group, 'position_y'] = pos[:, 1]
+        _df.loc[_df.group == group, 'position_x'] = x
+        # pos = x.reshape(-1, 2)
+        # _df.loc[_df.group == group, 'position_x'] = pos[:, 0]
+        # _df.loc[_df.group == group, 'position_y'] = pos[:, 1]
     energy = 0.
-    for (i, row_i), (j, row_j) in itertools.combinations(df.loc[df.group == group].iterrows(), 2):
-        if row_i.group == group or row_j.group == group:
+    for (i, row_i), (j, row_j) in itertools.combinations(_df.loc[_df.group == group].iterrows(), 2):
+        if i == group or j == group:
+            # print(f'{i = }')
+            # print(f'{j = }')
             energy += energy_combined_with_attraction(
-                row_i.position_x, row_i.position_y, row_j.position_x, row_j.position_y, ratio, minimum=1.5)
+                row_i.position_x, row_i.position_y, row_j.position_x, row_j.position_y, ratio, minimum=1.7, force=4.0)
         else:
+            # print(f'{i = }')
+            # print(f'{j = }')
             energy += energy_elliptic_without_attraction(
-                row_i.position_x, row_i.position_y, row_j.position_x, row_j.position_y, ratio, minimum=3)
+                row_i.position_x, row_i.position_y, row_j.position_x, row_j.position_y, ratio, minimum=1.5)
 
-    for index, row in df.iterrows():
-        energy += 10*np.abs(row.log_t-row.position_y)
+    # for index, row in _df.iterrows():
+    #     energy += 10*np.abs(row.log_t-row.position_y)
 
-    energy += 0.01*(df.position_x.max()-df.position_x.min()) * \
-        (df.position_y.max()-df.position_y.min())/len(set(df.group.values))
+    # energy += 0.01*(_df.position_x.max()-_df.position_x.min()) * \
+    #     (_df.position_y.max()-_df.position_y.min())/len(set(_df.group.values))
+
+    # print(f'{energy = }')
 
     return energy
 
@@ -244,11 +366,20 @@ def full_energy(df, ratio):
     return energy
 
 
-def initial_guess(df):
-    for i, group in enumerate(list(set(df.group.values))):
-        df.loc[df.group == group, 'position_x'] = 2 * \
-            (np.random.rand(len(df.loc[df.group == group]))-0.5)+i*5
+def initial_guess(df, ratio):
+    df['position_x'] = -ratio*1.5
     df['position_y'] = df.log_t.values
+    for group in list(set(df.group.values)):
+        index_list = [index for index,
+                      row in df.iterrows() if row.group == int(group)]
+        if int(group) in index_list:
+            index_list.remove(int(group))
+            index_list.insert(int(len(index_list)/2), int(group))
+        for index in index_list:
+            df.loc[index, 'position_x'] = df['position_x'].max()+ratio*1.5
+
+        # df.loc[df.group == group, 'position_x'] = 2 * \
+        #     (np.random.rand(len(df.loc[df.group == group]))-0.5)+i*5
 
 
 def initial_guess_old(df):
@@ -268,14 +399,20 @@ def initial_guess_old(df):
 
 def minimize_groups(df, ratio, method='BFGS'):
     for group in set(df.group.values):
-        positions = np.array([df.loc[df.group == group].position_x.values,
-                             df.loc[df.group == group].position_y.values]).T
+        # print(f'{group = }')
+        # print(df.group == group)
+        # print(f'{group_enegry(df, ratio, group) = }')
+        # positions = np.array([df.loc[df.group == group].position_x.values,
+        #                      df.loc[df.group == group].position_y.values]).T
+        positions = df.loc[df.group == group].position_x.values
         positions = positions.reshape(-1)
         res = minimize(lambda x: group_enegry(df, ratio, group, x),
                        positions, tol=0.01, method=method)
-        pos = res.x.reshape(-1, 2)
-        df.loc[df.group == group, 'position_x'] = pos[:, 0]
-        df.loc[df.group == group, 'position_y'] = pos[:, 1]
+        # print(f'{group_enegry(df, ratio, group, res.x) = }')
+        # pos = res.x.reshape(-1, 2)
+        df.loc[df.group == group, 'position_x'] = res.x
+        # df.loc[df.group == group, 'position_x'] = pos[:, 0]
+        # df.loc[df.group == group, 'position_y'] = pos[:, 1]
 
 
 def minimize_intergroup_distance(df, ratio, method='BFGS'):
@@ -287,21 +424,12 @@ def minimize_intergroup_distance(df, ratio, method='BFGS'):
         print(f'{offset = } {group = }')
         df.loc[df.group == group, 'position_x'] += offset
 
+def round_positions(df):
+    df.position_x=np.round(df.position_x,2)
+    df.position_y=np.round(df.position_y,2)
 
 def minimize_scheme(df, ratio, save='fig.pdf', method='BFGS'):
-    df.index = df.id.values
-    # df['position_x'], df['position_y'] = initial_guess(df)
-    initial_guess(df)
-    plot_scheme(df, ratio, save, show=True)
+    initial_guess(df, ratio)
     minimize_groups(df, ratio, method=method)
-    print(f'{energy_intergroup_distance(df, ratio) = }')
-    # plot_scheme(df, ratio, save, show=True)
-    for offset, group in zip(5*np.arange(len(set(df.group.values))), set(df.group.values)):
-        df.loc[df.group == group, 'position_x'] += offset - \
-            df.loc[group].position_x
-    print(f'{energy_intergroup_distance(df, ratio) = }')
-    plot_scheme(df, ratio, save, show=True)
     minimize_intergroup_distance(df, ratio, method=method)
-    print(f'{energy_intergroup_distance(df, ratio) = }')
-    # print(df)
-    return df
+    round_positions(df)
