@@ -18,7 +18,8 @@ class Motor:
         self.ana = Analysis(self.atoms)
         self.symbols = set(self.atoms.get_chemical_symbols())
         # print(self.symbols)
-        self.bonds = self.get_all_bonds()
+        self.bonds = [a for atom in self.symbols for x in self.symbols for a in self.ana.get_bonds(
+            atom, x, unique=True)[0]]
         self.G = nx.Graph(self.bonds).to_directed()
 
     def copy(self):
@@ -41,9 +42,45 @@ class Motor:
     def get_stator_rotor_bond(self):
         bonds = [item for x in self.symbols if x !=
                  'H' for item in self.ana.get_bonds('C', x, unique=True)[0]]
-        return find_bond(bonds)
+        f_b=find_bond(bonds)
+        if len(set(('H','F')) & set(self.id_to_symbol(self.get_bonds_of(f_b['rotor_neighbours'][0]))))>0: #'H' or 'F' bonded to this atom
+            f_b['C_H_rotor']=f_b['rotor_neighbours'][0]
+            f_b['not_C_H_rotor']=f_b['rotor_neighbours'][1]
+        else:
+            f_b['C_H_rotor']=f_b['rotor_neighbours'][1]
+            f_b['not_C_H_rotor']=f_b['rotor_neighbours'][0]
+        if self.spatial_distance_between_atoms(f_b['C_H_rotor'], f_b['stator_neighbours'][0]) < self.spatial_distance_between_atoms(f_b['C_H_rotor'], f_b['stator_neighbours'][1]):
+             f_b['C_H_stator']=f_b['stator_neighbours'][0]
+             f_b['not_C_H_stator']=f_b['stator_neighbours'][1]
+        else:
+             f_b['C_H_stator']=f_b['stator_neighbours'][1]
+             f_b['not_C_H_stator']=f_b['stator_neighbours'][0]
+        return f_b
 
-    def break_bonds(self):
+    def get_rotor_H(self):
+        f_b=self.get_stator_rotor_bond()
+        # for i in self.get_bonds_of(f_b['C_H_stator']):
+        #     print(i)
+        #     if len(set(('H','F')) & set(self.id_to_symbol([i])))>0:
+        #         print('Yes')
+        return [i for i in self.get_bonds_of(f_b['C_H_rotor']) if len(set(('H','F')) & set(self.id_to_symbol([i])))>0][0]
+
+    def get_stator_N(self):
+        f_b=self.get_stator_rotor_bond()
+        H = self.G.copy()
+        H.remove_node(f_b['C_H_stator'])
+        l=self.get_bonds_of(f_b['C_H_stator'])
+        l.remove(f_b['bond_stator_node'])
+        if nx.shortest_path_length(H,l[0],f_b['bond_stator_node'])>nx.shortest_path_length(H,l[1],f_b['bond_stator_node']):
+            return l[0]
+        else:
+            return l[1]
+
+    def get_stator_H(self):
+        l = [i for i in self.get_bonds_of(self.get_stator_N()) if len(set(('H','F')) & set(self.id_to_symbol([i])))>0]
+        return l[0] if len(l)>0 else None
+
+    def get_break_bonds(self):
         bonds = [item for x in self.symbols if x !=
                  'H' and x != 'F' for item in self.ana.get_bonds('C', x, unique=True)[0]]
         break_bond = []
@@ -58,20 +95,66 @@ class Motor:
                     break_bond.append(bond)
         return break_bond
 
-    def break_nodes(self):
+    def get_break_nodes(self):
         rotor_node = self.get_stator_rotor_bond()['bond_rotor_node']
-        return [b[np.argmax([nx.shortest_path_length(self.G, b[0], rotor_node), nx.shortest_path_length(self.G, b[1], rotor_node)])] for b in self.break_bonds()]
+        return [b[np.argmax([nx.shortest_path_length(self.G, b[0], rotor_node), nx.shortest_path_length(self.G, b[1], rotor_node)])] for b in self.get_break_bonds()]
 
     def divide_in_two(self, bond):
         G = self.G.copy().to_undirected()
         G.remove_edge(bond[0], bond[1])
         return list(nx.shortest_path(G, bond[0]).keys()), list(nx.shortest_path(G, bond[1]).keys())
 
+    def get_tails(self):
+        f_b=self.get_stator_rotor_bond()
+        b_b=self.get_break_bonds()
+        if len(b_b)==0:
+            for i in self.G[f_b['C_H_rotor']]:
+                # print(f'{i = }')
+                tail_C = i
+                # print(list(self.G[tail_C]))
+                tail_H = [j for j in list(self.G[tail_C]) if self.id_to_symbol(j)=='H' or self.id_to_symbol(j)=='F']
+                # print(f'{tail_H = }')
+                if len(tail_H) == 3:
+                    return tail_H
+        else:
+            split_bond=[b for b in b_b if f_b['C_H_rotor'] in b][0]
+            tail_start=list(split_bond)
+            tail_start.remove(f_b['C_H_rotor'])
+            tail_start=tail_start[0]
+            sp=self.divide_in_two((f_b['C_H_rotor'],tail_start))
+            H=self.G.copy()
+            for i in sp[0]: H.remove_node(i)
+            tail_distance=nx.shortest_path_length(H, source=tail_start)
+            max_distance=np.max(list(tail_distance.values()))
+
+            # print(max_distance)
+            return [i for i in tail_distance.keys() if tail_distance[i]==max_distance]
+            # tail= sp[1] if f_b['C_H_rotor'] in sp[0] else sp[0]
+
+
     def compare(self, other):
         return self.symbols
 
     def get_all_bonds(self):
-        return [a for atom in self.symbols for x in self.symbols for a in self.ana.get_bonds(atom, x, unique=True)[0]]
+        H = self.G.to_undirected()
+        return list(H.edges())
+
+    def get_bonds_of(self, i):
+        H = self.G.to_undirected()
+        return list(H[i])
+
+    def id_to_symbol(self, l):
+        c=self.atoms.get_chemical_symbols()
+        try:
+            return c[l]
+        except:
+            return [c[i] for i in l]
+
+    def spatial_distance_between_atoms(self, i,j):
+        if i is None or j is None:
+            return np.NaN
+        c=self.atoms.get_positions()
+        return np.linalg.norm(c[i,:]-c[j,:])
 
     def is_isomorphic(self, other):
         return nx.is_isomorphic(self.G, other.G)
@@ -147,11 +230,13 @@ class Motor:
         return self
         # print(self.get_coords())
 
-    def save(self, filename):
-        self.atoms.write(filename)
-        format_xyz_file(filename)
-
     def render(self):
         p = render_molecule_from_path([self.atoms])
+        print(p)
+        p.show(window_size=[1000, 1000], cpos=cpos, jupyter_backend='panel')
+
+    def render_alongside(self, other):
+        p = render_molecule_from_path([self.atoms])
+        p = render_molecule_from_path([other.atoms], p)
         print(p)
         p.show(window_size=[1000, 1000], cpos=cpos, jupyter_backend='panel')
