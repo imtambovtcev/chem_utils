@@ -18,7 +18,7 @@ default_atoms_settings['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
 
 
-def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=True):
+def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False):
 
     if atoms_settings is None:
         atoms_settings = default_atoms_settings
@@ -75,12 +75,12 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                                  smooth_shading=True, opacity=alpha)
 
 
-def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False):
+def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False, background_color='black', show_hydrogen_bonds=False):
     if plotter is None:
         plotter = pv.Plotter(notebook=notebook)
-        plotter.set_background('black')
+        plotter.set_background(background_color)
     render_molecule(plotter=plotter, atoms=atoms,
-                    atoms_settings=atoms_settings, alpha=alpha)
+                    atoms_settings=atoms_settings, alpha=alpha, show_hydrogen_bonds=show_hydrogen_bonds)
     if save is not None:
         plotter.show(screenshot=save, window_size=[
                      1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
