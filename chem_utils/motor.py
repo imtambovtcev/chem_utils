@@ -176,7 +176,7 @@ class Motor:
     def best_isomorphism(self, other):
         if not (self.is_isomorphic(other)):
             return None
-        return sorted(self.all_isomorphisms(other), key=lambda x: self.iso_distance(other, x))[0]
+        return min(self.all_isomorphisms(other), key=lambda x: self.iso_distance(other, x))
 
     def __eq__(self, other):
         # print(f'{self.symbols == other.symbols = }')
