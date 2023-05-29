@@ -7,6 +7,7 @@ from ase.geometry.analysis import Analysis
 import pandas as pd
 
 from pathlib import Path
+import argparse
 
 
 # from .rotate_path import rotate_path
@@ -115,19 +116,23 @@ def render_molecule_from_file(filename, save=None):
 
 
 def main():
-    _input = ['./'] if len(sys.argv) <= 1 else sys.argv[1:]
+    parser = argparse.ArgumentParser(description="Process some files.")
+    parser.add_argument('inputs', metavar='I', type=str, nargs='*', default=['./'],
+                        help='an input directory or file for processing')
+    args = parser.parse_args()
+
+    _input = args.inputs
     print(_input)
-    _input = [Path(d) for d in _input]
+    _input = [Path(i) for i in _input]
     inp = []
-    for d in _input:
-        if d.is_dir():
-            add = d.glob('*.xyz')
+    for i in _input:
+        if i.is_dir():
+            add = i.glob('*.xyz')
             inp.extend(add)
-        else:
-            inp.append(d)
+        elif i.is_file():
+            inp.append(i)
     print(inp)
     [render_molecule_from_file(str(p)) for p in inp]
-
 
 if __name__ == "__main__":
     main()
