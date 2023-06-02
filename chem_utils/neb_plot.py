@@ -50,7 +50,7 @@ def neb_energy_from_ocra_interp(filename):
     return points, interpolation
 
 
-def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None):
+def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None, label=None):
     if isinstance(file, tuple) or isinstance(file, list):
         file_interpolate, file_out = file
     else:
@@ -65,8 +65,16 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[0]))
         if fig is None:
             fig, ax = plt.subplots()
-        interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
-        points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
+        line1, = ax.plot(interpolation['Interp'],interpolation['Energy, eV'], label=label)
+        line_color = line1.get_color()
+        ax.plot(points['Images'],points['Energy, eV'],'.', color=line_color)
+        ax.set_xlabel('Distance')
+        ax.set_ylabel('Energy, eV')
+
+        if label is not None:
+            plt.legend()
+        # interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
+        # points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
 
         x_a, y_a = 0., points['Energy, eV'].iloc[0]
         x_b, y_b = 1., points['Energy, eV'].iloc[-1]
