@@ -19,7 +19,7 @@ default_atoms_settings['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
 
 
-def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False):
+def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False):
 
     if atoms_settings is None:
         atoms_settings = default_atoms_settings
@@ -80,6 +80,11 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                                        radius=0.05,
                                        resolution=10)
                 plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+
+    if show_numbers:
+        poly = pv.PolyData(atom_positions)
+        poly["Atom IDs"] = [str(atom.index) for atom in atoms]  # using atom's index as its ID
+        plotter.add_point_labels(poly, "Atom IDs", point_size=20, font_size=36, render_points_as_spheres=False)
 
 
 
