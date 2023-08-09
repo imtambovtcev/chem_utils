@@ -88,12 +88,12 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
 
 
 
-def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False, background_color='black', show_hydrogen_bonds=False):
+def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False, background_color='black', show_hydrogen_bonds=False, show_numbers=False):
     if plotter is None:
         plotter = pv.Plotter(notebook=notebook)
         plotter.set_background(background_color)
     render_molecule(plotter=plotter, atoms=atoms,
-                    atoms_settings=atoms_settings, alpha=alpha, show_hydrogen_bonds=show_hydrogen_bonds)
+                    atoms_settings=atoms_settings, alpha=alpha, show_hydrogen_bonds=show_hydrogen_bonds, show_numbers=show_numbers)
     if save is not None:
         plotter.show(screenshot=save, window_size=[
                      1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
