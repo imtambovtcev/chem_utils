@@ -1,6 +1,6 @@
 import numpy as np
 # from .find_cycles import find_bond
-from .rotate_path import rotation_matrix
+# from .rotate_path import rotation_matrix
 from .render_molecule import render_molecule_from_atoms, render_molecule_from_path
 from ase import Atoms
 from ase.io import read
@@ -10,7 +10,7 @@ import networkx.algorithms.isomorphism as iso
 from scipy.spatial.distance import cdist
 from scipy.optimize import minimize
 from .format_xyz import format_xyz_file
-from .rotate_path import rotate_path
+# from .rotate_path import rotate_path
 from scipy.spatial.transform import Rotation as R
 import pyvista as pv
 
@@ -29,6 +29,21 @@ def add_vector_to_plotter(p, r0, v, color='blue'):
 
     # Add arrows to the plotter
     p.add_mesh(arrows, color=color)
+
+def rotation_matrix(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    """
+    axis = np.asarray(axis)
+    axis = axis / math.sqrt(np.dot(axis, axis))
+    a = math.cos(theta / 2.0)
+    b, c, d = -axis * math.sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
 
 def simple_rotation(v1, v2):
@@ -210,8 +225,14 @@ class Molecule:
         symbols = self.atoms.get_chemical_symbols()
         return Motor(Atoms(symbols=symbols, positions=coords))
 
-    def rotate(self):
-        self.atoms = rotate_path(self.atoms)[0]
+    def get_bonds_without(self, elements=['H','F']):
+        # exclude H and F
+        symb = list(set(self.symbols)-set(elements))
+        # bonds between non H and F
+        return list(set([tuple(sorted(item)) for y in symb for x in symb for item in self.ana.get_bonds(
+            y, x, unique=True)[0]]))
+
+        # self.atoms = rotate_path(self.atoms)[0]
 
     def rotate_part(self, atom, bond, angle):
         # print(self.get_coords())
@@ -295,6 +316,22 @@ class Molecule:
         new_molecule.extend(replace_with.atoms)
         # print(f'{new_molecule.atoms = }')
         return new_molecule
+
+    def rotate(self, zero_atom, x_atom, no_z_atom):
+        '''
+        rotate molecule by 3 atoms:
+        - zero_atom: to be placed to (0,0,0)
+        - x_atom: to be placed to (?, 0, 0)
+        - no_z_atom: to be placed to (?, ?, 0)
+        '''
+        positions = self.atoms.get_positions()
+        positions -= positions[zero_atom, :]
+        positions = np.matmul(rotation_matrix(np.cross(positions[x_atom, :], [1, 0, 0]), np.arccos(
+            np.dot(positions[x_atom, :], [1, 0, 0])/np.linalg.norm(positions[x_atom, :]))), positions.T).T
+        positions = np.matmul(rotation_matrix(np.array(
+            [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
+        self.atoms.set_positions(positions)
+
 
 
 class Fragment(Molecule):
@@ -431,8 +468,7 @@ class Motor(Molecule):
         bond[1] -- rotor
         '''
 
-        edges = [item for x in self.symbols if x != 'H' for item in self.ana.get_bonds('C', x, unique=True)[0]] + [item for x in self.symbols if x != 'H' for item in self.ana.get_bonds(
-            'S', x, unique=True)[0]] + [item for x in self.symbols if x != 'H' for item in self.ana.get_bonds('O', x, unique=True)[0]]
+        edges = self.get_bonds_without()
         # Create a directed graph from the provided edges
 
         # print(f'{edges = }')
@@ -549,11 +585,7 @@ class Motor(Molecule):
         return l[0] if len(l) > 0 else None
 
     def get_break_bonds(self):
-        # exclude H and F
-        symb = list(set(self.symbols)-{'H', 'F'})
-        # bonds between non H and F
-        bonds = list(set([tuple(sorted(item)) for y in symb for x in symb for item in self.ana.get_bonds(
-            y, x, unique=True)[0]]))
+        bonds=self.get_bonds_without()
         break_bond = []
         connecting_bond = self.get_stator_rotor_bond()['bond']
         for bond in bonds:
@@ -639,3 +671,23 @@ class Motor(Molecule):
             'added_nodes': different_nodes,
             'added_edges': different_edges,
         }
+
+    def find_rotation_atoms(self, settings=None):
+        if settings is None or settings['mode'] == 'default':
+            ana = Analysis(self.atoms)
+            bonds = self.get_bonds_without()
+            # print(f'{bonds = }')
+            stator_rotor = self.find_bond()
+            zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
+                'stator_neighbours'][0], stator_rotor['stator_neighbours'][1]
+        elif settings['mode'] == 'bond_x':
+            ana = Analysis(self.atoms)
+            bonds = self.get_bonds_without()
+            # print(f'{bonds = }')
+            stator_rotor = self.find_bond()
+            zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
+                'bond_rotor_node'], np.min(stator_rotor['rotor_neighbours'])
+        else:
+            zero_atom, x_atom, no_z_atom = settings['zero_atom'], settings['x_atom'], settings['no_z_atom']
+
+        return zero_atom, x_atom, no_z_atom

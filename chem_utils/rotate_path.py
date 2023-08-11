@@ -4,10 +4,11 @@ from pathlib import Path
 import ase
 from ase.io import read, write
 from ase.geometry.analysis import Analysis
+from .motor import Motor
 
 import numpy as np
 import math
-from .find_cycles import find_bond
+# from .find_cycles import find_bond
 
 
 def rotation_matrix(axis, theta):
@@ -27,60 +28,32 @@ def rotation_matrix(axis, theta):
 
 
 def rotate_path(p, settings=None):
-    # print(isinstance(p, list))
+    mode = set()
+
     if isinstance(p, list):
-        path = [atoms.copy() for atoms in p]
-        mode = 'return'
+        path = [Motor(atoms) for atoms in p]
+        mode.add('return')
         # print('1')
     elif isinstance(p, ase.Atoms):
-        path = [p.copy()]
-        mode = 'return'
+        path = [Motor(p)]
+        mode.add('return')
         # print('2')
     else:
         path = read(str(p), index=':')
-        mode = 'save'
+        path = [Motor(atoms) for atoms in path]
+        mode.add('save')
         # print('3')
 
-    # print(f'{len(path) = }')
-    # print(path)
+    zero_atom, x_atom, no_z_atom = path[0].find_rotation_atoms(settings=settings)
+    [motor.rotate(zero_atom, x_atom, no_z_atom) for motor in path]
 
-    if settings is None or settings['mode'] == 'default':
-        ana = Analysis(path[0])
-        bonds = [item for x in list(set(path[0].get_chemical_symbols(
-        ))) if x != 'H' for item in ana.get_bonds('C', x, unique=True)[0]]
-        # print(f'{bonds = }')
-        stator_rotor = find_bond(bonds)
-        zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
-            'stator_neighbours'][0], stator_rotor['stator_neighbours'][1]
-    elif settings['mode'] == 'bond_x':
-        ana = Analysis(path[0])
-        bonds = [item for x in list(set(path[0].get_chemical_symbols(
-        ))) if x != 'H' for item in ana.get_bonds('C', x, unique=True)[0]]
-        # print(f'{bonds = }')
-        stator_rotor = find_bond(bonds)
-        zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
-            'bond_rotor_node'], np.min(stator_rotor['rotor_neighbours'])
-    else:
-        zero_atom, x_atom, no_z_atom = settings['zero_atom'], settings['x_atom'], settings['no_z_atom']
 
-    for atoms in path:
-        positions = atoms.get_positions()
-        positions -= positions[zero_atom, :]
-        # print(positions.shape)
-        # print(positions[2,:])
-        # print(np.dot(positions[2,:],[1,0,0])/np.linalg.norm(positions[2,:]))
-        positions = np.matmul(rotation_matrix(np.cross(positions[x_atom, :], [1, 0, 0]), np.arccos(
-            np.dot(positions[x_atom, :], [1, 0, 0])/np.linalg.norm(positions[x_atom, :]))), positions.T).T
-        positions = np.matmul(rotation_matrix(np.array(
-            [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
-        # print(f'{positions[zero_atom, :] = }')
-        # print(f'{positions[x_atom, :] = }')
-        # print(f'{positions[no_z_atom, :] = }')
-        atoms.set_positions(positions)
+    return_path = [motor.atoms for motor in path]
 
-    if mode == 'return':
-        return path
-    write(str(p)[:-4]+'_rotated.xyz', path)
+    if 'return' in mode:
+        return return_path
+    if 'save' in mode:
+        write(str(p)[:-4]+'_rotated.xyz', return_path)
 
 
 def main():
