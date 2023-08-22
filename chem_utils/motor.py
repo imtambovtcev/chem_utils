@@ -413,60 +413,35 @@ class Molecule:
         fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
         fragment_atoms_ids - ids of the atoms fragments
         '''
-        print(set(self.get_bonded_atoms_of(fragment_attach_atom)))
-        new_ids = dict(zip(fragment_atoms_ids, range(len(fragment_atoms_ids))))
-        print(fragment_vectors(
-            new_ids[fragment_attach_atom], self.get_coords(fragment_atoms_ids)))
-        fragment_attach_vector_from_molecule = np.mean(self.get_coords(list(set(self.get_bonded_atoms_of(
-            fragment_attach_atom))-set(fragment_atoms_ids)))-self.get_coords(fragment_attach_atom), axis=0)
-        fragment_attach_vector_from_molecule /= - \
-            np.linalg.norm(fragment_attach_vector_from_molecule)
-        fragment_attach_vector_from_fragment = np.mean(self.get_coords(list(set(self.get_bonded_atoms_of(
-            fragment_attach_atom)) and set(fragment_atoms_ids)))-self.get_coords(fragment_attach_atom), axis=0)
-        fragment_attach_vector_from_fragment /= np.linalg.norm(
-            fragment_attach_vector_from_fragment)
-        # print(f'{fragment_attach_vector_from_molecule = }')
-        # print(f'{fragment_attach_vector_from_fragment = }')
-        # print(f'{np.arccos(np.dot(fragment_attach_vector_from_molecule, fragment_attach_vector_from_fragment)) = }')
-        fragment_attach_vector = 0.5 * \
-            (fragment_attach_vector_from_molecule +
-             fragment_attach_vector_from_fragment)
-        centroid, normal = best_fit_plane(self.get_coords(fragment_atoms_ids))
-        connection_centroid, connection_normal = best_fit_plane(self.get_coords(list(set(
-            self.get_bonded_atoms_of(fragment_attach_atom))-set(fragment_atoms_ids))+[fragment_attach_atom]))
-        return Fragment(atoms=self.atoms[fragment_atoms_ids],
-                        fragment_attach_atom=fragment_attach_atom,
-                        fragment_attach_vector=fragment_attach_vector,
-                        original_ids=fragment_atoms_ids,
-                        centroid=centroid, normal=normal,
-                        connection_centroid=connection_centroid, connection_normal=connection_normal)
+        _, fragment = self.divide_in_two_fragments(fragment_attach_atom, fragment_atoms_ids)
+        return fragment
 
-    def replace_fragment(self, to_replace, replace_with, replacement_type='best_rotation'):
-        # to be sure that the positioning is correct
-        _to_replace = self.get_fragment(
-            to_replace.fragment_attach_atom, to_replace.original_ids)
-        new_molecule = self.copy()
-        # print(f'{replace_with.atoms.positions = }')
-        if replacement_type == 'simple_rotation':
-            replace_with.move(_to_replace.attach_point -
-                              replace_with.attach_point)
-            rotation = simple_rotation(
-                _to_replace.fragment_attach_vector, replace_with.fragment_attach_vector)  # check!
-            replace_with.rotate_around_attach_point(rotation)
-        elif replacement_type == 'best_rotation':
-            replace_with.move(_to_replace.attach_point -
-                              replace_with.attach_point)
-            rotation = best_rotation(_to_replace.fragment_attach_vector, _to_replace.connection_normal,
-                                     replace_with.fragment_attach_vector,  replace_with.connection_normal)
-            replace_with.rotate_around_attach_point(rotation)
-        # print(f'{replace_with.atoms.positions = }')
-        # print(f'{_to_replace.original_ids = }')
-        # print(f'{new_molecule.atoms = }')
-        del new_molecule.atoms[_to_replace.original_ids]
-        # print(f'{new_molecule.atoms = }')
-        new_molecule.extend(replace_with.atoms)
-        # print(f'{new_molecule.atoms = }')
-        return new_molecule
+    # def replace_fragment(self, to_replace, replace_with, replacement_type='best_rotation'):
+    #     # to be sure that the positioning is correct
+    #     _to_replace = self.get_fragment(
+    #         to_replace.fragment_attach_atom, to_replace.original_ids)
+    #     new_molecule = self.copy()
+    #     # print(f'{replace_with.atoms.positions = }')
+    #     if replacement_type == 'simple_rotation':
+    #         replace_with.move(_to_replace.attach_point -
+    #                           replace_with.attach_point)
+    #         rotation = simple_rotation(
+    #             _to_replace.fragment_attach_vector, replace_with.fragment_attach_vector)  # check!
+    #         replace_with.rotate_around_attach_point(rotation)
+    #     elif replacement_type == 'best_rotation':
+    #         replace_with.move(_to_replace.attach_point -
+    #                           replace_with.attach_point)
+    #         rotation = best_rotation(_to_replace.fragment_attach_vector, _to_replace.connection_normal,
+    #                                  replace_with.fragment_attach_vector,  replace_with.connection_normal)
+    #         replace_with.rotate_around_attach_point(rotation)
+    #     # print(f'{replace_with.atoms.positions = }')
+    #     # print(f'{_to_replace.original_ids = }')
+    #     # print(f'{new_molecule.atoms = }')
+    #     del new_molecule.atoms[_to_replace.original_ids]
+    #     # print(f'{new_molecule.atoms = }')
+    #     new_molecule.extend(replace_with.atoms)
+    #     # print(f'{new_molecule.atoms = }')
+    #     return new_molecule
 
     def rotate(self, zero_atom, x_atom, no_z_atom):
         '''
