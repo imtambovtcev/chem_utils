@@ -1,9 +1,10 @@
+from __future__ import annotations
 import numpy as np
 # from .find_cycles import find_bond
 # from .rotate_path import rotation_matrix
 from .render_molecule import render_molecule_from_atoms, render_molecule_from_path
 from ase import Atoms
-from ase.io import read
+from ase.io import read, write
 from ase.geometry.analysis import Analysis
 import networkx as nx
 import networkx.algorithms.isomorphism as iso
@@ -13,6 +14,9 @@ from .format_xyz import format_xyz_file
 # from .rotate_path import rotate_path
 from scipy.spatial.transform import Rotation as R
 import pyvista as pv
+import warnings
+from sklearn.decomposition import PCA
+import io
 
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
@@ -29,6 +33,7 @@ def add_vector_to_plotter(p, r0, v, color='blue'):
 
     # Add arrows to the plotter
     p.add_mesh(arrows, color=color)
+
 
 def rotation_matrix(axis, theta):
     """
@@ -107,6 +112,96 @@ def best_fit_plane(points):
     return centroid, normal
 
 
+# def bonded_nodes_with_exclude(i,bonds, exclude=[]):
+#     b = [bond[0] if bond[0]!=i else bond[1] for bond in bonds if i in bond]
+#     return [bond for bon in b if bond not in exclude]
+
+
+def first_split_node(i, G):
+    # Check if the starting node 'i' itself is a split
+    if len(list(G.neighbors(i))) > 1:
+        return i, list(G.neighbors(i))
+
+    visited = set()
+    visited.add(i)
+
+    # Use BFS to find the first split or the last node
+    for node in nx.bfs_tree(G, i):
+        visited.add(node)
+        if len(list(G.neighbors(node))) > 2:
+            next_level_nodes = set(G.neighbors(node)) - visited
+            return node, list(next_level_nodes)
+
+    return node, None
+
+
+def fragment_vectors(i, coords):
+    V0 = coords[i]
+    n_unique_nodes = len(coords)
+
+    # Single Point Case
+    if n_unique_nodes == 1:
+        warnings.warn(
+            "Only one point provided. Using arbitrary perpendicular vectors.")
+        V1 = np.array([1, 0, 0])
+        V2 = np.array([0, 1, 0])
+        V3 = np.array([0, 0, 1])
+        return V0, V1, V2, V3
+
+    # Two Points Case
+    if n_unique_nodes == 2:
+        warnings.warn(
+            "Only two points provided. Adjusting vectors based on reference vectors.")
+        V1 = coords[(i-1) % 2] - coords[i]
+        V1 = V1 / np.linalg.norm(V1)
+
+        # If V1 is essentially the x-axis, set V2 to y-axis
+        if np.allclose(V1, [1, 0, 0], atol=1e-8):
+            V2 = np.array([0, 1, 0])
+            V3 = np.array([0, 0, 1])
+        else:
+            reference_vectors = [np.array([1, 0, 0]), np.array(
+                [0, 1, 0]), np.array([0, 0, 1])]
+            dot_products = [np.abs(np.dot(V1, ref_vec))
+                            for ref_vec in reference_vectors]
+
+            # Exclude the vector most aligned with V1
+            exclude_index = np.argmax(dot_products)
+            remaining_vectors = [v for i, v in enumerate(
+                reference_vectors) if i != exclude_index]
+
+            # Check cross products with the remaining vectors and choose V2 such that V3 aligns most with the excluded vector
+            cross1 = np.cross(V1, remaining_vectors[0])
+            cross2 = np.cross(V1, remaining_vectors[1])
+
+            if np.dot(cross1, reference_vectors[exclude_index]) > np.dot(cross2, reference_vectors[exclude_index]):
+                V2 = remaining_vectors[0]
+                V3 = cross1
+            else:
+                V2 = remaining_vectors[1]
+                V3 = cross2
+
+        return V0, V1, V2, V3
+
+    # Three or More Points Case
+    pca = PCA(n_components=3)
+    pca.fit(coords)
+
+    explained_variances = pca.explained_variance_
+    components = pca.components_
+
+    ordered_indices = np.argsort(explained_variances)[::-1]
+    V1 = components[ordered_indices[0]]
+    V2 = components[ordered_indices[1]]
+    V3 = np.cross(V1, V2)
+
+    if n_unique_nodes == 3 and np.linalg.matrix_rank(coords) == 2:
+        warnings.warn(
+            "The three points provided are collinear. Adjusting vectors based on PCA.")
+
+    return V0, V1, V2, V3
+
+
 class Molecule:
     def __init__(self, atoms: Atoms):
         self.atoms = atoms.copy()
@@ -120,7 +215,7 @@ class Molecule:
         self.G = nx.Graph(self.bonds).to_directed()
 
     def copy(self):
-        return Motor(self.atoms.copy())
+        return Molecule(self.atoms.copy())
 
     def extend(self, atoms):
         self.atoms.extend(atoms)
@@ -145,6 +240,46 @@ class Molecule:
         G.remove_edge(bond[0], bond[1])
         return list(nx.shortest_path(G, bond[0]).keys()), list(nx.shortest_path(G, bond[1]).keys())
 
+    def divide_in_two_fragments(self, fragment_attach_atom, fragment_atoms_ids):
+        '''
+        fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
+        fragment_atoms_ids - ids of the atoms fragments
+        '''
+        small_fragment_ids = list(set(fragment_atoms_ids))
+        # print(f'{small_fragment_ids = }')
+        main_fragment_ids = list(
+            (set(range(len(self.atoms)))-set(small_fragment_ids)) | {fragment_attach_atom})
+        # print(f'{self.get_bonds_of(small_fragment_ids) = }')
+        small_fragment_bonds = [bond for bond in self.get_bonds_of(
+            small_fragment_ids) if set(bond).issubset(set(small_fragment_ids))]
+        # print(f'{small_fragment_bonds = }')
+        main_fragment_bonds = [
+            bond for bond in self.get_all_bonds() if bond not in small_fragment_bonds]
+        # print(f'{main_fragment_bonds = }')
+        new_small_fragment_ids = dict(
+            zip(small_fragment_ids, range(len(small_fragment_ids))))
+        # print(f'{new_small_fragment_ids = }')
+        new_main_fragment_ids = dict(
+            zip(main_fragment_ids, range(len(main_fragment_ids))))
+        # print(f'{new_main_fragment_ids = }')
+        V0_s, V1_s, V2_s, V3_s = fragment_vectors(
+            new_small_fragment_ids[fragment_attach_atom], self.get_coords(small_fragment_ids))
+        V0_m, V1_m, V2_m, V3_m = fragment_vectors(
+            new_main_fragment_ids[fragment_attach_atom], self.get_coords(main_fragment_ids))
+        # print(f'{self.atoms.symbols[small_fragment_ids] = }')
+
+        R_s = np.column_stack([V1_s, V2_s, V3_s])
+        R_m = np.column_stack([V1_m, V2_m, V3_m])
+        # R_s = np.linalg.inv(np.column_stack([V1_s, V2_s, V3_s]))
+        # R_m = np.linalg.inv(np.column_stack([V1_m, V2_m, V3_m]))
+        # R_to_small = np.dot(R_s, np.linalg.inv(R_m))
+        # R_to_main = np.linalg.inv(R_to_small)
+        small_atoms = Atoms(
+            self.atoms.symbols[small_fragment_ids], positions=self.get_coords(small_fragment_ids))
+        main_atoms = Atoms(
+            self.atoms.symbols[main_fragment_ids], positions=self.get_coords(main_fragment_ids))
+        return Fragment(main_atoms, new_main_fragment_ids[fragment_attach_atom], R_s), Fragment(small_atoms, new_small_fragment_ids[fragment_attach_atom], R_m)
+
     def compare(self, other):
         return self.symbols
 
@@ -152,9 +287,15 @@ class Molecule:
         H = self.G.to_undirected()
         return list(H.edges())
 
-    def get_bonds_of(self, i):
+    def get_bonded_atoms_of(self, i):
         H = self.G.to_undirected()
         return list(H[i])
+
+    def get_bonds_of(self, i):
+        if isinstance(i, int):
+            return [bond for bond in self.bonds if i in self.get_all_bonds()]
+        else:
+            return [bond for bond in self.get_all_bonds() if len(set(bond) & set(i)) > 0]
 
     def id_to_symbol(self, l):
         c = self.atoms.get_chemical_symbols()
@@ -165,6 +306,7 @@ class Molecule:
 
     def spatial_distance_between_atoms(self, i, j):
         if i is None or j is None:
+            warnings.warn("Either 'i' or 'j' is None. Returning NaN.")
             return np.NaN
         c = self.atoms.get_positions()
         return np.linalg.norm(c[i, :]-c[j, :])
@@ -225,7 +367,7 @@ class Molecule:
         symbols = self.atoms.get_chemical_symbols()
         return Motor(Atoms(symbols=symbols, positions=coords))
 
-    def get_bonds_without(self, elements=['H','F']):
+    def get_bonds_without(self, elements=['H', 'F']):
         # exclude H and F
         symb = list(set(self.symbols)-set(elements))
         # bonds between non H and F
@@ -266,11 +408,20 @@ class Molecule:
             return p
 
     def get_fragment(self, fragment_attach_atom, fragment_atoms_ids):
-        fragment_attach_vector_from_molecule = np.mean(self.get_coords(list(set(self.get_bonds_of(
+        '''
+        Function to get fragment from a molecule
+        fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
+        fragment_atoms_ids - ids of the atoms fragments
+        '''
+        print(set(self.get_bonded_atoms_of(fragment_attach_atom)))
+        new_ids = dict(zip(fragment_atoms_ids, range(len(fragment_atoms_ids))))
+        print(fragment_vectors(
+            new_ids[fragment_attach_atom], self.get_coords(fragment_atoms_ids)))
+        fragment_attach_vector_from_molecule = np.mean(self.get_coords(list(set(self.get_bonded_atoms_of(
             fragment_attach_atom))-set(fragment_atoms_ids)))-self.get_coords(fragment_attach_atom), axis=0)
         fragment_attach_vector_from_molecule /= - \
             np.linalg.norm(fragment_attach_vector_from_molecule)
-        fragment_attach_vector_from_fragment = np.mean(self.get_coords(list(set(self.get_bonds_of(
+        fragment_attach_vector_from_fragment = np.mean(self.get_coords(list(set(self.get_bonded_atoms_of(
             fragment_attach_atom)) and set(fragment_atoms_ids)))-self.get_coords(fragment_attach_atom), axis=0)
         fragment_attach_vector_from_fragment /= np.linalg.norm(
             fragment_attach_vector_from_fragment)
@@ -282,7 +433,7 @@ class Molecule:
              fragment_attach_vector_from_fragment)
         centroid, normal = best_fit_plane(self.get_coords(fragment_atoms_ids))
         connection_centroid, connection_normal = best_fit_plane(self.get_coords(list(set(
-            self.get_bonds_of(fragment_attach_atom))-set(fragment_atoms_ids))+[fragment_attach_atom]))
+            self.get_bonded_atoms_of(fragment_attach_atom))-set(fragment_atoms_ids))+[fragment_attach_atom]))
         return Fragment(atoms=self.atoms[fragment_atoms_ids],
                         fragment_attach_atom=fragment_attach_atom,
                         fragment_attach_vector=fragment_attach_vector,
@@ -332,96 +483,86 @@ class Molecule:
             [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
         self.atoms.set_positions(positions)
 
+    def atoms_to_xyz_string(self):
+        sio = io.StringIO()
+        write(sio, self.atoms, format="xyz")
+        return sio.getvalue()
+
+
+def read_fragment(filename):
+    with open(filename, "r") as file:
+        # Read number of atoms
+        num_atoms = int(file.readline().strip())
+
+        # Parse the "Fragment" line
+        fragment_line = file.readline().strip().split()
+        attach_atom = int(fragment_line[1])
+        matrix_values = list(map(float, fragment_line[2:]))
+        attach_matrix = np.array([matrix_values[i:i+3]
+                                 for i in range(0, len(matrix_values), 3)])
+
+        # Read Atoms
+        symbols = []
+        positions = []
+        for _ in range(num_atoms):
+            line = file.readline().strip().split()
+            atom, x, y, z = line[0], float(
+                line[1]), float(line[2]), float(line[3])
+            symbols.append(atom)
+            positions.append([x, y, z])
+
+        # Initialize the Atoms object using ase
+        atoms = Atoms(symbols=symbols, positions=positions)
+
+        return Fragment(atoms, attach_atom, attach_matrix)
 
 
 class Fragment(Molecule):
-    def __init__(self, atoms: Atoms, fragment_attach_atom: int, fragment_attach_vector: np.array, original_ids=None, centroid=None, normal=None, connection_centroid=None, connection_normal=None):
+    def __init__(self, atoms: Atoms, attach_atom: int, attach_matrix=None):
         super().__init__(atoms)
-        self.fragment_attach_atom = fragment_attach_atom
-        self.fragment_attach_vector = fragment_attach_vector
-        self.original_ids = original_ids
-        self.new_ids = dict(zip(original_ids, range(len(original_ids))))
-        self.centroid = centroid
-        self.normal = normal
-        self.connection_centroid = connection_centroid
-        self.connection_normal = connection_normal
+        self.attach_atom = attach_atom
+        if attach_matrix is None:
+            self.attach_matrix = np.eye(3)
+        else:
+            self.attach_matrix = attach_matrix
 
     @property
     def attach_point(self):
-        return self.atoms.positions[self.new_ids[self.fragment_attach_atom]]
+        return self.atoms.positions[self.attach_atom]
 
-    def move(self, r0):
-        self.atoms.positions += r0
-        self.centroid += r0
-        self.connection_centroid += r0
+    @property
+    def fragment_vectors(self):
+        return fragment_vectors(self.attach_atom, self.atoms.positions)
 
-    def rotate_around_attach_point(self, rotation):
-        r0 = np.copy(self.attach_point)
-        self.move(-r0)
-
-        self.atoms.positions = rotation.apply(self.atoms.positions)
-        self.fragment_attach_vector = rotation.apply(
-            self.fragment_attach_vector)
-        self.centroid = rotation.apply(self.centroid)
-        self.normal = rotation.apply(self.normal)
-        self.connection_centroid = rotation.apply(self.connection_centroid)
-        self.connection_normal = rotation.apply(self.connection_normal)
-        print(f'{r0 = }')
-        self.move(r0)
-
-    def move_and_rotate(self, r0, vector, rotation_type='best_rotation'):
-        # print(f'{self.attach_point = }')
-        # print(f'{r0 = }')
-        self.atoms.positions -= self.attach_point
-
-        if rotation_type == 'simple_rotation':
-            v1 = self.fragment_attach_vector
-            v2 = vector
-            v1 /= np.linalg.norm(v1)
-            v2 /= np.linalg.norm(v2)
-            # print(f'{v1 = }')
-            # print(f'{v2 = }')
-
-            # Calculate the rotation vector and rotation angle
-            rotation_vector = np.cross(v1, v2)
-            rotation_angle = np.arccos(np.dot(v1, v2))
-            rotation_angle = 0.0 if np.isnan(
-                rotation_angle) else rotation_angle
-            print(f'{rotation_angle = }')
-
-            # Compute the rotation matrix
-            rotation = R.from_rotvec(rotation_angle * rotation_vector)
-            self.atoms.positions = rotation.apply(self.atoms.positions)
-            self.fragment_attach_vector = rotation.apply(
-                self.fragment_attach_vector)
-            self.atoms.positions += r0
-        elif rotation_type == 'best_rotation':
-            v1 = self.fragment_attach_vector
-            v2 = vector
-            v1 /= np.linalg.norm(v1)
-            v2 /= np.linalg.norm(v2)
-            v3 /= np.linalg.norm(v3)
-            v4 /= np.linalg.norm(v4)
-            rotation = best_rotation(v1, v2, v3, v4)
-            self.atoms.positions = rotation.apply(self.atoms.positions)
-            self.fragment_attach_vector = rotation.apply(
-                self.fragment_attach_vector)
-            self.atoms.positions += r0
-
-        # else:
-        #     rotation = Rotation.identity()
-
-        # Rotate the atoms
+    def copy(self):
+        return Fragment(self.atoms, self.attach_atom, self.attach_matrix)
 
     def _fragment_render(self, vectors=True, show_numbers=False):
         p = render_molecule_from_atoms(self.atoms, show_numbers=show_numbers)
+        V0, V1, V2, V3 = self.fragment_vectors
         if vectors:
-            add_vector_to_plotter(p, self.attach_point,
-                                  self.fragment_attach_vector)
-            add_vector_to_plotter(p, self.centroid, self.normal, color='red')
-            add_vector_to_plotter(
-                p, self.connection_centroid, self.connection_normal, color='green')
+            add_vector_to_plotter(p, V0, V1, color='red')
+            add_vector_to_plotter(p, V0, V2, color='green')
+            add_vector_to_plotter(p, V0, V3, color='blue')
         return p
+
+    def apply_transition(self, r0):
+        self.atoms.positions = self.atoms.positions + r0
+
+    def apply_rotation(self, R):
+        # Rotate atom positions (assuming each row is a position vector)
+        self.atoms.positions = np.dot(R, self.atoms.positions.T).T
+
+        # Rotate the attach_matrix (assuming each column is a vector)
+        self.attach_matrix = np.dot(R, self.attach_matrix)
+
+    def get_origin_rotation_matrix(self):
+        V0, V1, V2, V3 = self.fragment_vectors
+        return np.linalg.inv(np.column_stack([V1, V2, V3]))
+
+    def set_to_origin(self):
+        self.apply_transition(-self.attach_point)
+        self.apply_rotation(self.get_origin_rotation_matrix())
 
     def render(self, show=True, show_numbers=False):
         p = self._fragment_render(vectors=True, show_numbers=show_numbers)
@@ -438,6 +579,34 @@ class Fragment(Molecule):
             p.show()
         else:
             return p
+
+    def save(self, filename):
+        # Convert attach matrix to string
+        matrix_string = ' '.join([' '.join(map(str, row))
+                                 for row in self.attach_matrix])
+
+        # Create the second line with embedded info
+        fragment_info = f'Fragment: {self.attach_atom} {matrix_string}'
+
+        # Construct the save string
+        atom_info = self.atoms_to_xyz_string().split('\n', 1)[1].strip()
+        save_string = self.atoms_to_xyz_string().split(
+            '\n', 1)[0] + '\n' + fragment_info + '\n' + atom_info
+
+        with open(filename, "w") as text_file:
+            text_file.write(save_string)
+
+    def connect_fragment(self, fragment: Fragment):
+        _fragment = fragment.copy()
+        _fragment.set_to_origin()
+        _fragment.apply_rotation(self.attach_matrix)
+        _fragment.apply_transition(self.attach_point)
+        add_atoms = _fragment.atoms
+        del add_atoms[_fragment.attach_atom]
+        return Molecule(self.atoms+add_atoms)
+
+    def __add__(self, fragment):
+        return self.connect_fragment(fragment)
 
 
 # Define the standard_stator graph
@@ -539,7 +708,7 @@ class Motor(Molecule):
         # bonds = [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('C', x, unique=True)[0]]+ [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('S', x, unique=True)[0]]+ [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('O', x, unique=True)[0]]
         f_b = self.find_bond()
         # 'H' or 'F' bonded to this atom
-        if len(set(('H', 'F')) & set(self.id_to_symbol(self.get_bonds_of(f_b['rotor_neighbours'][0])))) > 0:
+        if len(set(('H', 'F')) & set(self.id_to_symbol(self.get_bonded_atoms_of(f_b['rotor_neighbours'][0])))) > 0:
             f_b['C_H_rotor'] = f_b['rotor_neighbours'][0]
             f_b['not_C_H_rotor'] = f_b['rotor_neighbours'][1]
         else:
@@ -562,17 +731,17 @@ class Motor(Molecule):
 
     def get_rotor_H(self):
         f_b = self.get_stator_rotor_bond()
-        # for i in self.get_bonds_of(f_b['C_H_stator']):
+        # for i in self.get_bonded_atoms_of(f_b['C_H_stator']):
         #     print(i)
         #     if len(set(('H','F')) & set(self.id_to_symbol([i])))>0:
         #         print('Yes')
-        return [i for i in self.get_bonds_of(f_b['C_H_rotor']) if len(set(('H', 'F')) & set(self.id_to_symbol([i]))) > 0][0]
+        return [i for i in self.get_bonded_atoms_of(f_b['C_H_rotor']) if len(set(('H', 'F')) & set(self.id_to_symbol([i]))) > 0][0]
 
     def get_stator_N(self):
         f_b = self.get_stator_rotor_bond()
         H = self.G.copy()
         H.remove_node(f_b['C_H_stator'])
-        l = self.get_bonds_of(f_b['C_H_stator'])
+        l = self.get_bonded_atoms_of(f_b['C_H_stator'])
         l.remove(f_b['bond_stator_node'])
         if nx.shortest_path_length(H, l[0], f_b['bond_stator_node']) > nx.shortest_path_length(H, l[1], f_b['bond_stator_node']):
             return l[0]
@@ -580,12 +749,12 @@ class Motor(Molecule):
             return l[1]
 
     def get_stator_H(self):
-        l = [i for i in self.get_bonds_of(self.get_stator_N()) if len(
+        l = [i for i in self.get_bonded_atoms_of(self.get_stator_N()) if len(
             set(('H', 'F')) & set(self.id_to_symbol([i]))) > 0]
         return l[0] if len(l) > 0 else None
 
     def get_break_bonds(self):
-        bonds=self.get_bonds_without()
+        bonds = self.get_bonds_without()
         break_bond = []
         connecting_bond = self.get_stator_rotor_bond()['bond']
         for bond in bonds:
@@ -605,31 +774,34 @@ class Motor(Molecule):
     def get_tails(self):
         f_b = self.get_stator_rotor_bond()
         b_b = self.get_break_bonds()
+
         if any(f_b['C_H_rotor'] in b for b in b_b):
-            split_bond = [b for b in b_b if f_b['C_H_rotor'] in b][0]
-        else: #len(b_b) == 0
+            split_bond = [b for b in b_b if f_b['C_H_rotor'] in b]
+            if not split_bond:
+                return []  # Return empty list if split_bond is empty
+            split_bond = split_bond[0]
+        else:
             for i in self.G[f_b['C_H_rotor']]:
-                # print(f'{i = }')
                 tail_C = i
-                # print(list(self.G[tail_C]))
                 tail_H = [j for j in list(self.G[tail_C]) if self.id_to_symbol(
                     j) == 'H' or self.id_to_symbol(j) == 'F']
-                # print(f'{tail_H = }')
                 if len(tail_H) == 3:
                     return tail_H
-            tail_start = list(split_bond)
-            tail_start.remove(f_b['C_H_rotor'])
-            tail_start = tail_start[0]
-            sp = self.divide_in_two((f_b['C_H_rotor'], tail_start))
-            H = self.G.copy()
-            for i in sp[0]:
-                H.remove_node(i)
-            tail_distance = nx.shortest_path_length(H, source=tail_start)
-            max_distance = np.max(list(tail_distance.values()))
+            else:  # This 'else' corresponds to the inner 'for' loop
+                if 'split_bond' not in locals():  # Ensure split_bond is defined
+                    return []  # Return empty list if no condition is met
 
-            # print(max_distance)
-            return [i for i in tail_distance.keys() if tail_distance[i] == max_distance]
-            # tail= sp[1] if f_b['C_H_rotor'] in sp[0] else sp[0]
+                tail_start = list(split_bond)
+                tail_start.remove(f_b['C_H_rotor'])
+                tail_start = tail_start[0]
+                sp = self.divide_in_two((f_b['C_H_rotor'], tail_start))
+                H = self.G.copy()
+                for i in sp[0]:
+                    H.remove_node(i)
+                tail_distance = nx.shortest_path_length(H, source=tail_start)
+                max_distance = np.max(list(tail_distance.values()))
+
+                return [i for i in tail_distance.keys() if tail_distance[i] == max_distance]
 
     def find_replacement(self, other):
         # Создаем неориентированные версии графов
