@@ -319,7 +319,7 @@ class Molecule(Atoms):
             self.symbols[small_fragment_ids], positions=self.get_positions()[small_fragment_ids, :])
         main_atoms = Atoms(
             self.symbols[main_fragment_ids], positions=self.get_positions()[main_fragment_ids, :])
-        return Fragment(main_atoms, new_main_fragment_ids[fragment_attach_atom], R_s), Fragment(small_atoms, new_small_fragment_ids[fragment_attach_atom], R_m)
+        return Fragment(main_atoms, attach_atom=new_main_fragment_ids[fragment_attach_atom], attach_matrix=R_s), Fragment(small_atoms, attach_atom=new_small_fragment_ids[fragment_attach_atom], attach_matrix=R_m)
 
     def compare(self, other):
         return self.symbols
@@ -538,6 +538,15 @@ class Molecule(Atoms):
         """Convert the Motor object into a cacheable format based on atomic positions and symbols."""
         return (tuple(self.get_positions().flatten()), tuple(self.get_chemical_symbols()))
 
+    def linear_interploation(self, atoms: Atoms, n=1):
+        path = Path([self])
+        for i in range(n):
+            new_atmos = self.copy()
+            new_atmos.set_positions(self.get_positions(
+            )+((i+1)/(n+1))*(atoms.get_positions()-self.get_positions()))
+            path.append(new_atmos)
+        return path
+
 
 def read_fragment(filename):
     with open(filename, "r") as file:
@@ -564,17 +573,25 @@ def read_fragment(filename):
         # Initialize the Atoms object using ase
         atoms = Atoms(symbols=symbols, positions=positions)
 
-        return Fragment(atoms, attach_atom, attach_matrix)
+        return Fragment(atoms, attach_atom=attach_atom, attach_matrix=attach_matrix)
 
 
 class Fragment(Molecule):
-    def __init__(self, atoms, attach_atom, attach_matrix=None):
-        super().__init__(atoms)
-        self.attach_atom = attach_atom
-        if attach_matrix is None:
-            self.attach_matrix = np.eye(3)
+    def __init__(self, *args, attach_atom=None, attach_matrix=None, **kwargs):
+        # If the first argument is an instance of Fragment
+        if args and isinstance(args[0], Fragment):
+            fragment = args[0]
+            super().__init__(fragment)
+            self.attach_atom = fragment.attach_atom
+            self.attach_matrix = fragment.attach_matrix
         else:
-            self.attach_matrix = attach_matrix
+            super().__init__(*args, **kwargs)
+            if attach_atom is None:
+                raise ValueError(
+                    "attach_atom is mandatory unless copying from another Fragment")
+            self.attach_atom = attach_atom
+            self.attach_matrix = np.eye(
+                3) if attach_matrix is None else attach_matrix
 
     @property
     def attach_point(self):
@@ -950,30 +967,25 @@ class Motor(Molecule):
 
 class Path:
     def __init__(self, images=None):
-        if images is None:
-            self.images = []
-        else:
-            # Convert images to appropriate type
-            converted_images = [self._convert_type(img) for img in images]
-
+        self.images = []
+        if images is not None:
             # Check if any image is of the Motor class
-            contains_motor = any(isinstance(image, Motor)
-                                 for image in converted_images)
+            contains_motor = any(isinstance(image, Motor) for image in images)
             if contains_motor:
                 # Convert all images to Motor class
                 converted_images = [Motor(image) if not isinstance(
-                    image, Motor) else image for image in converted_images]
+                    image, Motor) else image for image in images]
             else:
                 # Convert all images to Molecule class
                 converted_images = [Molecule(image) if not isinstance(
-                    image, Molecule) else image for image in converted_images]
+                    image, Molecule) else image for image in images]
 
             # Check that all images satisfy __eq__ requirements
             reference_image = converted_images[0]
             for idx, img in enumerate(converted_images[1:], start=1):
                 if reference_image != img:
                     warn(
-                        f"The image at index {idx} does not satisfy the equality requirements with the first image.")
+                        f"The image at index {idx} atoms are different.")
 
             # Initialize the self.images attribute
             self.images = converted_images
@@ -985,6 +997,8 @@ class Path:
     def _convert_type(self, image):
         """Convert the image to the type of images in the path."""
         if not self.images:
+            if not isinstance(image, Molecule):
+                return Molecule(image)
             return image
         current_type = self._get_type()
         return current_type(image)
