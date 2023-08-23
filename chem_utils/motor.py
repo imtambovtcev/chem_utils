@@ -262,19 +262,31 @@ class Molecule(Atoms):
         return self_counts == other_counts
 
     def copy(self):
-        return Molecule(super().copy())
+        """Return a copy of the Molecule."""
+        new_molecule = Molecule()
+        for key, value in self.arrays.items():
+            new_molecule.arrays[key] = value.copy()
+        new_molecule.set_cell(self.get_cell().copy())
+        new_molecule.set_pbc(self.get_pbc().copy())
+        new_molecule.info = self.info.copy()
+        return new_molecule
 
     def extend(self, atoms):
         super().extend(atoms)
         self.reinit()
 
-    def set_coords(self, new_coords, atoms=None):
+    def set_positions_no_reinit(self, new_coords, atoms=None):
         if atoms is None:
-            self.set_positions(new_coords)
+            super().set_positions(new_coords)
         else:
             co = self.get_positions()
             co[atoms, :] = new_coords
-            self.set_positions(co)
+            super().set_positions(co)
+        self.reinit()
+
+    def set_positions(self, new_coords, atoms=None):
+        self.set_positions_no_reinit(new_coords, atoms)
+        self.reinit()
 
     def divide_in_two(self, bond):
         G = self.G.copy()
@@ -467,7 +479,7 @@ class Molecule(Atoms):
         # print(island)
         r = rotation_matrix(v, np.pi*angle/180)
         new_coords = np.matmul(r, (self.get_positions(island)-r0).T).T+r0
-        self.set_coords(new_coords, island)
+        self.set_positions(new_coords, island)
 
         return self
         # print(self.get_positions())
@@ -992,15 +1004,16 @@ class Path:
 
     def _get_type(self):
         """Retrieve the type of the images in the path."""
-        return type(self[0]) if self.images else None
+        return type(self[0]) if len(self.images) > 0 else None
 
     def _convert_type(self, image):
         """Convert the image to the type of images in the path."""
-        if not self.images:
+        if len(self.images) == 0:
             if not isinstance(image, Molecule):
                 return Molecule(image)
             return image
         current_type = self._get_type()
+        # print(f'{current_type = }')
         return current_type(image)
 
     def __getitem__(self, index):
@@ -1009,13 +1022,35 @@ class Path:
 
     def __setitem__(self, index, image):
         """Replace an image at the specified index."""
-        converted_image = self._convert_type(image)
+        
+        # Handle single integer index
+        if isinstance(index, int):
+            converted_image = self._convert_type(image)
+            # Check for equality with the first image in the path
+            if len(self.images) > 0 and self.images[0] != converted_image:
+                warn(f"The provided image does not satisfy the equality requirements with the first image in the path.")
+            self.images[index] = converted_image
+            return
+        
+        # Handle slices
+        if isinstance(index, slice):
+            start, stop, step = index.indices(len(self.images))
+            if not isinstance(image, (list, tuple)):
+                raise ValueError("For slice assignment, the image must be a list or tuple of images.")
+            for i, img in zip(range(start, stop, step), image):
+                self[i] = img
+            return
+        
+        # Handle lists or other iterables
+        if isinstance(index, (list, tuple)):
+            if not isinstance(image, (list, tuple)) or len(index) != len(image):
+                raise ValueError("For list or tuple assignment, the image must be a list or tuple of images with the same length as the index.")
+            for i, img in zip(index, image):
+                self[i] = img
+            return
 
-        # Check for equality with the first image in the path
-        if len(self.images) > 0 and self.images[0] != converted_image:
-            warn(f"The provided image does not satisfy the equality requirements with the first image in the path.")
+        raise TypeError(f"Index of type {type(index)} is not supported.")
 
-        self.images[index] = converted_image
 
     def __iter__(self):
         """Make the class iterable."""
@@ -1095,3 +1130,46 @@ class Path:
                 raise ValueError(
                     f"No valid mapping found for molecules at index {i} and {i+1}.")
             self[i] = self[i].reorder(mapping)
+
+    def find_bonds_breaks(self):
+        assert self[0].get_all_bonds() == self[-1].get_all_bonds()
+        first_image_bonds = self[0].get_all_bonds()
+        return [first_image_bonds == image.get_all_bonds() for image in self]
+
+    def find_holes(self):
+        l = self.find_bonds_breaks()
+        holes_list = []
+        in_hole = False
+        for i, value in enumerate(l):
+            if value:
+                in_hole = False
+            else:
+                if in_hole:
+                    holes_list[-1][1] += 1
+                else:
+                    in_hole = True
+                    holes_list.append([i, 1])
+        return holes_list
+
+    def fix_bonds_breaks(self):
+        l = self.find_holes()
+
+        for hole, length in l:
+            # print(f'{hole = } {length = }')
+            self[hole:hole+length] = self[hole-1].linear_interploation(self[hole+length], n=length).images
+
+        l = self.find_holes()
+
+        if len(l) > 0:
+            warn.warnings(
+                f'Linear interpolation didn\'t fix the problem. Holes:{l}')
+            for hole, length in holes(bonds):
+                # print(f'{hole = } {length = }')
+                for i in range(hole, hole+length):
+                    p = self[hole-1].copy()
+                    path[i] = p
+
+        l = self.find_holes()
+
+        if len(l) > 0:
+            warn.warnings(f'Problem wasn\'t fixed. Holes:{l}')
