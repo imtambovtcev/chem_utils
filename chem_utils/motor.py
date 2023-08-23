@@ -1053,27 +1053,24 @@ class Path:
         p = render_molecule_from_atoms(self[current_idx])
         print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
 
-        def key_press(event):
+        def key_press(obj, event):
             nonlocal current_idx
-            if event.key == 'n' and current_idx < len(self) - 1:
+            key = obj.GetKeySym()  # Get the pressed key
+            if key == 'n' and current_idx < len(self) - 1:
                 current_idx += 1
-                # Update the rendered molecule with the next one in the path
-                p.clear()
-                p = render_molecule_from_atoms(self[current_idx])
-                p.show()
-            elif event.key == 'p' and current_idx > 0:
+            elif key == 'p' and current_idx > 0:
                 current_idx -= 1
-                # Update the rendered molecule with the previous one in the path
-                p.clear()
-                p = render_molecule_from_atoms(self[current_idx])
-                p.show()
-            elif event.key == 'q':
+            elif key == 'q':
                 # Exit the rendering
                 p.close()
+                return
+            # Update the rendered molecule based on the current_idx
+            p.clear()
+            render_molecule_from_atoms(self[current_idx], p)
+            p.reset_camera()
+            p.render()
 
-        p.add_key_event('n', key_press)
-        p.add_key_event('p', key_press)
-        p.add_key_event('q', key_press)
+        p.iren.add_observer('KeyPressEvent', key_press)
         p.show()
 
     def rotate(self):
