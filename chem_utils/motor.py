@@ -14,9 +14,26 @@ from .format_xyz import format_xyz_file
 # from .rotate_path import rotate_path
 from scipy.spatial.transform import Rotation as R
 import pyvista as pv
+from warnings import warn
 import warnings
 from sklearn.decomposition import PCA
 import io
+from itertools import combinations
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
+
+from rdkit import Chem
+from rdkit.Chem import rdFMCS
+from rdkit.Chem import Draw
+from rdkit.Chem.rdDepictor import Compute2DCoords
+
+import math
+
+from IPython.display import display, Image
+from io import BytesIO
+
+from itertools import islice
 
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
@@ -202,41 +219,65 @@ def fragment_vectors(i, coords):
     return V0, V1, V2, V3
 
 
-class Molecule:
-    def __init__(self, atoms: Atoms):
-        self.atoms = atoms.copy()
+class Molecule(Atoms):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.reinit()
 
     def reinit(self):
-        self.ana = Analysis(self.atoms)
-        self.symbols = set(self.atoms.get_chemical_symbols())
-        self.bonds = [a for atom in self.symbols for x in self.symbols for a in self.ana.get_bonds(
-            atom, x, unique=True)[0]]
-        self.G = nx.Graph(self.bonds).to_directed()
+        self.ana = Analysis(self)
+        self.G = nx.Graph()  # Start with an empty graph
+
+        for idx, symbol in enumerate(self.get_chemical_symbols()):
+            self.G.add_node(idx, label=symbol)
+
+        # Get the bonds from self.ana.all_bonds
+        all_bonds = self.ana.all_bonds[0]
+        unique_bonds = []
+        for i, neighbors in enumerate(all_bonds):
+            for j in neighbors:
+                # To ensure uniqueness, we'll only consider bonds where i < j
+                if i < j:
+                    unique_bonds.append((i, j))
+
+        # print(f'{unique_bonds = }')
+        self.G.add_edges_from(unique_bonds)
+
+    def __eq__(self, other: Atoms):
+        '''
+        Molecules are equal if they have the same atoms
+        '''
+        # Check if both are instances of Atoms
+        if not isinstance(other, Atoms):
+            return False
+
+        # Get the counts of each atom type
+        self_counts = Counter(self.get_chemical_symbols())
+        other_counts = Counter(other.get_chemical_symbols())
+
+        # print(f'{self_counts = }')
+        # print(f'{other_counts = }')
+
+        # Check if the atom type counts are the same
+        return self_counts == other_counts
 
     def copy(self):
-        return Molecule(self.atoms.copy())
+        return Molecule(super().copy())
 
     def extend(self, atoms):
-        self.atoms.extend(atoms)
+        super().extend(atoms)
         self.reinit()
-
-    def get_coords(self, atoms=None):
-        if atoms is None:
-            return self.atoms.get_positions()
-        else:
-            return self.atoms.get_positions()[atoms, :]
 
     def set_coords(self, new_coords, atoms=None):
         if atoms is None:
-            self.atoms.set_positions(new_coords)
+            self.set_positions(new_coords)
         else:
-            co = self.get_coords()
+            co = self.get_positions()
             co[atoms, :] = new_coords
-            self.atoms.set_positions(co)
+            self.set_positions(co)
 
     def divide_in_two(self, bond):
-        G = self.G.copy().to_undirected()
+        G = self.G.copy()
         G.remove_edge(bond[0], bond[1])
         return list(nx.shortest_path(G, bond[0]).keys()), list(nx.shortest_path(G, bond[1]).keys())
 
@@ -248,7 +289,7 @@ class Molecule:
         small_fragment_ids = list(set(fragment_atoms_ids))
         # print(f'{small_fragment_ids = }')
         main_fragment_ids = list(
-            (set(range(len(self.atoms)))-set(small_fragment_ids)) | {fragment_attach_atom})
+            (set(range(len(self)))-set(small_fragment_ids)) | {fragment_attach_atom})
         # print(f'{self.get_bonds_of(small_fragment_ids) = }')
         small_fragment_bonds = [bond for bond in self.get_bonds_of(
             small_fragment_ids) if set(bond).issubset(set(small_fragment_ids))]
@@ -263,10 +304,10 @@ class Molecule:
             zip(main_fragment_ids, range(len(main_fragment_ids))))
         # print(f'{new_main_fragment_ids = }')
         V0_s, V1_s, V2_s, V3_s = fragment_vectors(
-            new_small_fragment_ids[fragment_attach_atom], self.get_coords(small_fragment_ids))
+            new_small_fragment_ids[fragment_attach_atom], self.get_positions()[small_fragment_ids, :])
         V0_m, V1_m, V2_m, V3_m = fragment_vectors(
-            new_main_fragment_ids[fragment_attach_atom], self.get_coords(main_fragment_ids))
-        # print(f'{self.atoms.symbols[small_fragment_ids] = }')
+            new_main_fragment_ids[fragment_attach_atom], self.get_positions()[main_fragment_ids, :])
+        # print(f'{set(self.get_chemical_symbols())[small_fragment_ids] = }')
 
         R_s = np.column_stack([V1_s, V2_s, V3_s])
         R_m = np.column_stack([V1_m, V2_m, V3_m])
@@ -275,131 +316,171 @@ class Molecule:
         # R_to_small = np.dot(R_s, np.linalg.inv(R_m))
         # R_to_main = np.linalg.inv(R_to_small)
         small_atoms = Atoms(
-            self.atoms.symbols[small_fragment_ids], positions=self.get_coords(small_fragment_ids))
+            self.symbols[small_fragment_ids], positions=self.get_positions()[small_fragment_ids, :])
         main_atoms = Atoms(
-            self.atoms.symbols[main_fragment_ids], positions=self.get_coords(main_fragment_ids))
+            self.symbols[main_fragment_ids], positions=self.get_positions()[main_fragment_ids, :])
         return Fragment(main_atoms, new_main_fragment_ids[fragment_attach_atom], R_s), Fragment(small_atoms, new_small_fragment_ids[fragment_attach_atom], R_m)
 
     def compare(self, other):
         return self.symbols
 
     def get_all_bonds(self):
-        H = self.G.to_undirected()
-        return list(H.edges())
+        return list(self.G.edges())
 
     def get_bonded_atoms_of(self, i):
-        H = self.G.to_undirected()
-        return list(H[i])
+        return list(self.G[i])
 
     def get_bonds_of(self, i):
         if isinstance(i, int):
-            return [bond for bond in self.bonds if i in self.get_all_bonds()]
+            return [bond for bond in self.get_all_bonds() if i in self.get_all_bonds()]
         else:
             return [bond for bond in self.get_all_bonds() if len(set(bond) & set(i)) > 0]
 
     def id_to_symbol(self, l):
-        c = self.atoms.get_chemical_symbols()
         try:
-            return c[l]
+            return self.G.nodes[l]['label']
         except:
-            return [c[i] for i in l]
+            return [self.G.nodes[i]['label'] for i in l]
 
     def spatial_distance_between_atoms(self, i, j):
         if i is None or j is None:
             warnings.warn("Either 'i' or 'j' is None. Returning NaN.")
             return np.NaN
-        c = self.atoms.get_positions()
+        c = self.get_positions()
         return np.linalg.norm(c[i, :]-c[j, :])
 
-    def is_isomorphic(self, other):
-        return nx.is_isomorphic(self.G, other.G)
+    def to_rdkit_mol(self):
+        """Convert this Molecule instance to an RDKit Mol object."""
+        # Create an empty editable molecule
+        mol = Chem.EditableMol(Chem.Mol())
 
-    def all_isomorphisms(self, other):
-        if not self.is_isomorphic(other):
-            return None
-        return nx.vf2pp_all_isomorphisms(self.G, other.G)
+        # Add atoms to the molecule
+        for symbol in self.get_chemical_symbols():
+            atom = Chem.Atom(symbol)
+            mol.AddAtom(atom)
+
+        # Add bonds to the molecule based on self.G
+        for (i, j) in self.get_all_bonds():
+            # Assuming single bonds; adjust if necessary
+            mol.AddBond(int(i), int(j), Chem.BondType.SINGLE)
+
+        # Convert editable molecule to a regular Mol object and return
+        return mol.GetMol()
+
+    @staticmethod
+    def from_rdkit_mol(mol):
+        """Create a Molecule instance from an RDKit Mol object."""
+        atoms = Atoms(len(mol.GetAtoms()),
+                      positions=[atom.GetPos() for atom in mol.GetAtoms()],
+                      symbols=[atom.GetSymbol() for atom in mol.GetAtoms()])
+        return Molecule(atoms)
+
+    def is_isomorphic(self, other, respect_labels=True):
+        if respect_labels:
+            # Define a function to check if node labels are equal
+            def node_match(n1, n2):
+                return n1['label'] == n2['label']
+            return nx.is_isomorphic(self.G, other.G, node_match=node_match)
+        else:
+            return nx.is_isomorphic(self.G, other.G)
+
+    def all_mappings(self, other, respect_labels=True):
+        if respect_labels:
+            # Use the node_label argument directly for vf2pp_all_isomorphisms
+            if not nx.is_isomorphic(self.G, other.G, node_match=lambda n1, n2: n1['label'] == n2['label']):
+                return None
+            all_iso = nx.vf2pp_all_isomorphisms(
+                self.G, other.G, node_label='label')
+        else:
+            if not nx.is_isomorphic(self.G, other.G):
+                return None
+            all_iso = nx.vf2pp_all_isomorphisms(self.G, other.G)
+
+        return all_iso
 
     def iso_distance(self, other, iso=None):
-        coord_1 = self.atoms.get_positions()
-        coord_2 = other.atoms.get_positions()
+        coord_1 = self.get_positions()
+        coord_2 = other.get_positions()
         if iso is not None:
             coord_1 = coord_1[np.array(list(iso.keys()), dtype=int), :]
             coord_2 = coord_2[np.array(list(iso.values()), dtype=int), :]
         # print(np.linalg.norm(cdist(coord_1, coord_1) - cdist(coord_2, coord_2)))
         return np.linalg.norm(cdist(coord_1, coord_1) - cdist(coord_2, coord_2))
 
-    def best_isomorphism(self, other):
+    def best_mapping(self, other, limit=None):
         if not (self.is_isomorphic(other)):
             return None
-        return min(self.all_isomorphisms(other), key=lambda x: self.iso_distance(other, x))
+        isos = list(islice(self.all_mappings(other), limit))
+        return min(isos, key=lambda x: self.iso_distance(other, x))
 
-    def __eq__(self, other):
-        # print(f'{self.symbols == other.symbols = }')
-        # print(f'{self.is_isomorphic(other) = }')
-        if self.symbols != other.symbols:
-            return False
-        isos = self.all_isomorphisms(other)
-        if isos is None:
-            return False
-        else:
-            symb_1 = np.array(self.atoms.get_chemical_symbols())
-            symb_2 = np.array(other.atoms.get_chemical_symbols())
-            for iso in isos:
-                # print(iso)
-                # print(symb_1[np.array(list(iso.keys()), dtype=int)])
-                # print(symb_2[np.array(list(iso.keys()), dtype=int)])
-                if np.all(symb_1[np.array(list(iso.keys()), dtype=int)] == symb_2[np.array(list(iso.values()), dtype=int)]):
-                    return True
-            return False
-
-    def best_distance(self, other):
+    def best_distance(self, other: Atoms, limit=None):
         if self.is_isomorphic(other):
-            new = other.reorder(self.best_isomorphism(other))
+            new = other.reorder(self.best_mapping(other, limit=limit))
             return self.iso_distance(new)
         else:
             return np.nan
 
-    def reorder(self, iso):
-        order = np.arange(len(self.atoms))
-        order[np.array(list(iso.keys()), dtype=int)
-              ] = order[np.array(list(iso.values()), dtype=int)]
-        coords = self.atoms.get_positions()[order, :]
-        symbols = self.atoms.get_chemical_symbols()
-        return Motor(Atoms(symbols=symbols, positions=coords))
+    def reorder(self, mapping: dict):
+        """
+        Reorders the atoms in the molecule based on the provided mapping.
+
+        Parameters:
+            - mapping (dict): A dictionary where keys are current indices and values are target indices.
+
+        Returns:
+            - Molecule: A new molecule with atoms reordered based on the mapping.
+        """
+        # Initialize an order array with current ordering
+        order = np.arange(len(self))
+
+        # Update the order array based on the mapping
+        for current_index, target_index in mapping.items():
+            order[current_index] = target_index
+
+        # Reorder the atomic positions and symbols
+        reordered_coords = self.get_positions()[order, :]
+        reordered_symbols = np.array(self.get_chemical_symbols())[
+            order].tolist()
+
+        # Return the new reordered molecule
+        return Molecule(symbols=reordered_symbols, positions=reordered_coords)
 
     def get_bonds_without(self, elements=['H', 'F']):
-        # exclude H and F
-        symb = list(set(self.symbols)-set(elements))
-        # bonds between non H and F
-        return list(set([tuple(sorted(item)) for y in symb for x in symb for item in self.ana.get_bonds(
-            y, x, unique=True)[0]]))
+        # Get nodes that correspond to the undesired elements
+        undesired_nodes = [node for node, attrs in self.G.nodes(
+            data=True) if attrs['label'] in elements]
 
-        # self.atoms = rotate_path(self.atoms)[0]
+        # Create a subgraph by removing undesired nodes
+        subgraph = self.G.copy()
+        subgraph.remove_nodes_from(undesired_nodes)
+
+        # Return all edges of the subgraph
+        return list(subgraph.edges())
 
     def rotate_part(self, atom, bond, angle):
-        # print(self.get_coords())
+        # print(self.get_positions())
         edge = bond if bond[0] == atom else bond[::-1]
         print(edge)
-        r0 = self.get_coords(atom)
-        v = self.get_coords(edge[1])-r0
+        r0 = self.get_positions(atom)
+        v = self.get_positions(edge[1])-r0
         island = self.divide_in_two(edge)[0]
         # print(island)
         r = rotation_matrix(v, np.pi*angle/180)
-        new_coords = np.matmul(r, (self.get_coords(island)-r0).T).T+r0
+        new_coords = np.matmul(r, (self.get_positions(island)-r0).T).T+r0
         self.set_coords(new_coords, island)
 
         return self
-        # print(self.get_coords())
+        # print(self.get_positions())
 
     def render(self, show=True, show_numbers=False):
-        p = render_molecule_from_atoms(self.atoms, show_numbers=show_numbers)
+        p = render_molecule_from_atoms(self, show_numbers=show_numbers)
         if show:
             p.show()
         else:
             return p
 
     def render_alongside(self, other, alpha=1.0, show=True):
-        p = render_molecule_from_atoms(self.atoms)
+        p = render_molecule_from_atoms(self)
         p = render_molecule_from_atoms(other.atoms, p, alpha=alpha)
         # print(p)
         if show:
@@ -407,41 +488,31 @@ class Molecule:
         else:
             return p
 
+    def scheme_2D(self, filename=None):
+        """Compute 2D coordinates for the molecule using RDKit and visualize or save it."""
+        mol = self.to_rdkit_mol()
+
+        # Compute the 2D coordinates
+        Compute2DCoords(mol)
+
+        # If a filename is provided, save the image. Otherwise, display it in Jupyter.
+        if filename:
+            Draw.MolToFile(mol, filename)
+        else:
+            pil_img = Draw.MolToImage(mol)
+            byte_stream = BytesIO()
+            pil_img.save(byte_stream, format="PNG")
+            display(Image(data=byte_stream.getvalue()))
+
     def get_fragment(self, fragment_attach_atom, fragment_atoms_ids):
         '''
         Function to get fragment from a molecule
         fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
         fragment_atoms_ids - ids of the atoms fragments
         '''
-        _, fragment = self.divide_in_two_fragments(fragment_attach_atom, fragment_atoms_ids)
+        _, fragment = self.divide_in_two_fragments(
+            fragment_attach_atom, fragment_atoms_ids)
         return fragment
-
-    # def replace_fragment(self, to_replace, replace_with, replacement_type='best_rotation'):
-    #     # to be sure that the positioning is correct
-    #     _to_replace = self.get_fragment(
-    #         to_replace.fragment_attach_atom, to_replace.original_ids)
-    #     new_molecule = self.copy()
-    #     # print(f'{replace_with.atoms.positions = }')
-    #     if replacement_type == 'simple_rotation':
-    #         replace_with.move(_to_replace.attach_point -
-    #                           replace_with.attach_point)
-    #         rotation = simple_rotation(
-    #             _to_replace.fragment_attach_vector, replace_with.fragment_attach_vector)  # check!
-    #         replace_with.rotate_around_attach_point(rotation)
-    #     elif replacement_type == 'best_rotation':
-    #         replace_with.move(_to_replace.attach_point -
-    #                           replace_with.attach_point)
-    #         rotation = best_rotation(_to_replace.fragment_attach_vector, _to_replace.connection_normal,
-    #                                  replace_with.fragment_attach_vector,  replace_with.connection_normal)
-    #         replace_with.rotate_around_attach_point(rotation)
-    #     # print(f'{replace_with.atoms.positions = }')
-    #     # print(f'{_to_replace.original_ids = }')
-    #     # print(f'{new_molecule.atoms = }')
-    #     del new_molecule.atoms[_to_replace.original_ids]
-    #     # print(f'{new_molecule.atoms = }')
-    #     new_molecule.extend(replace_with.atoms)
-    #     # print(f'{new_molecule.atoms = }')
-    #     return new_molecule
 
     def rotate(self, zero_atom, x_atom, no_z_atom):
         '''
@@ -450,18 +521,22 @@ class Molecule:
         - x_atom: to be placed to (?, 0, 0)
         - no_z_atom: to be placed to (?, ?, 0)
         '''
-        positions = self.atoms.get_positions()
+        positions = self.get_positions()
         positions -= positions[zero_atom, :]
         positions = np.matmul(rotation_matrix(np.cross(positions[x_atom, :], [1, 0, 0]), np.arccos(
             np.dot(positions[x_atom, :], [1, 0, 0])/np.linalg.norm(positions[x_atom, :]))), positions.T).T
         positions = np.matmul(rotation_matrix(np.array(
             [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
-        self.atoms.set_positions(positions)
+        self.set_positions(positions)
 
     def atoms_to_xyz_string(self):
         sio = io.StringIO()
-        write(sio, self.atoms, format="xyz")
+        write(sio, self, format="xyz")
         return sio.getvalue()
+
+    def _to_cacheable_format(self):
+        """Convert the Motor object into a cacheable format based on atomic positions and symbols."""
+        return (tuple(self.get_positions().flatten()), tuple(self.get_chemical_symbols()))
 
 
 def read_fragment(filename):
@@ -493,7 +568,7 @@ def read_fragment(filename):
 
 
 class Fragment(Molecule):
-    def __init__(self, atoms: Atoms, attach_atom: int, attach_matrix=None):
+    def __init__(self, atoms, attach_atom, attach_matrix=None):
         super().__init__(atoms)
         self.attach_atom = attach_atom
         if attach_matrix is None:
@@ -503,17 +578,39 @@ class Fragment(Molecule):
 
     @property
     def attach_point(self):
-        return self.atoms.positions[self.attach_atom]
+        return self.get_positions()[self.attach_atom]
 
     @property
     def fragment_vectors(self):
-        return fragment_vectors(self.attach_atom, self.atoms.positions)
+        return fragment_vectors(self.attach_atom, self.get_positions())
 
     def copy(self):
-        return Fragment(self.atoms, self.attach_atom, self.attach_matrix)
+        return Fragment(self, self.attach_atom, self.attach_matrix)
+
+    def reorder(self, mapping: dict):
+        """
+        Reorders the atoms in the Fragment instance based on the provided mapping and updates the attach_atom.
+
+        Parameters:
+            - mapping (dict): A dictionary where keys are current indices and values are target indices.
+
+        Returns:
+            - Fragment: A new Fragment instance with atoms reordered based on the mapping.
+        """
+        reordered_molecule = super().reorder(
+            mapping)  # Call the reorder method from the Molecule class
+
+        # Update the attach_atom if it's present in the mapping
+        if self.attach_atom in mapping:
+            new_attach_atom = mapping[self.attach_atom]
+        else:
+            new_attach_atom = self.attach_atom
+
+        # Convert the reordered molecule to a Fragment instance and return
+        return Fragment(reordered_molecule, attach_atom=new_attach_atom, attach_matrix=self.attach_matrix)
 
     def _fragment_render(self, vectors=True, show_numbers=False):
-        p = render_molecule_from_atoms(self.atoms, show_numbers=show_numbers)
+        p = render_molecule_from_atoms(self, show_numbers=show_numbers)
         V0, V1, V2, V3 = self.fragment_vectors
         if vectors:
             add_vector_to_plotter(p, V0, V1, color='red')
@@ -522,11 +619,11 @@ class Fragment(Molecule):
         return p
 
     def apply_transition(self, r0):
-        self.atoms.positions = self.atoms.positions + r0
+        self.set_positions(self.get_positions() + r0)
 
     def apply_rotation(self, R):
         # Rotate atom positions (assuming each row is a position vector)
-        self.atoms.positions = np.dot(R, self.atoms.positions.T).T
+        self.set_positions(np.dot(R, self.get_positions().T).T)
 
         # Rotate the attach_matrix (assuming each column is a vector)
         self.attach_matrix = np.dot(R, self.attach_matrix)
@@ -548,40 +645,41 @@ class Fragment(Molecule):
 
     def render_alongside(self, other, alpha=1.0, show=True):
         p = self._fragment_render(vectors=True)
-        p = render_molecule_from_atoms(other.atoms, p, alpha=alpha)
-        # print(p)
+        p = render_molecule_from_atoms(other, p, alpha=alpha)
         if show:
             p.show()
         else:
             return p
 
-    def save(self, filename):
+    def fragment_to_xyz_string(self):
         # Convert attach matrix to string
         matrix_string = ' '.join([' '.join(map(str, row))
-                                 for row in self.attach_matrix])
+                                  for row in self.attach_matrix])
 
         # Create the second line with embedded info
         fragment_info = f'Fragment: {self.attach_atom} {matrix_string}'
 
         # Construct the save string
         atom_info = self.atoms_to_xyz_string().split('\n', 1)[1].strip()
-        save_string = self.atoms_to_xyz_string().split(
-            '\n', 1)[0] + '\n' + fragment_info + '\n' + atom_info
+        return self.atoms_to_xyz_string().split('\n', 1)[0] + '\n' + fragment_info + '\n' + atom_info
 
+    def save(self, filename):
         with open(filename, "w") as text_file:
-            text_file.write(save_string)
+            text_file.write(self.fragment_to_xyz_string())
 
     def connect_fragment(self, fragment: Fragment):
         _fragment = fragment.copy()
         _fragment.set_to_origin()
         _fragment.apply_rotation(self.attach_matrix)
         _fragment.apply_transition(self.attach_point)
-        add_atoms = _fragment.atoms
-        del add_atoms[_fragment.attach_atom]
-        return Molecule(self.atoms+add_atoms)
+        molecule = self.copy()
+        del molecule[molecule.attach_atom]
+        molecule = Molecule(molecule)
+        molecule.extend(_fragment)
+        return molecule
 
-    def __add__(self, fragment):
-        return self.connect_fragment(fragment)
+    # def __add__(self, fragment):
+    #     return self.connect_fragment(fragment)
 
 
 # Define the standard_stator graph
@@ -595,7 +693,6 @@ standard_stators_list = []
 for ss in standard_stators:
     standard_stator = nx.Graph()
     standard_stator.add_edges_from(ss)
-    standard_stator = standard_stator.to_undirected()
     standard_stators_list.append(standard_stator)
 
 
@@ -680,7 +777,7 @@ class Motor(Molecule):
         }
 
     def get_stator_rotor_bond(self):
-        # bonds = [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('C', x, unique=True)[0]]+ [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('S', x, unique=True)[0]]+ [item for x in self.symbols if x !='H' for item in self.ana.get_bonds('O', x, unique=True)[0]]
+        # bonds = [item for x in set(self.get_chemical_symbols()) if x !='H' for item in self.ana.get_bonds('C', x, unique=True)[0]]+ [item for x in set(self.get_chemical_symbols()) if x !='H' for item in self.ana.get_bonds('S', x, unique=True)[0]]+ [item for x in set(self.get_chemical_symbols()) if x !='H' for item in self.ana.get_bonds('O', x, unique=True)[0]]
         f_b = self.find_bond()
         # 'H' or 'F' bonded to this atom
         if len(set(('H', 'F')) & set(self.id_to_symbol(self.get_bonded_atoms_of(f_b['rotor_neighbours'][0])))) > 0:
@@ -779,10 +876,6 @@ class Motor(Molecule):
                 return [i for i in tail_distance.keys() if tail_distance[i] == max_distance]
 
     def find_replacement(self, other):
-        # Создаем неориентированные версии графов
-        G_un = self.G.to_undirected()
-        other_un = other.G.to_undirected()
-
         # Получаем номера замененных вершин
         old_nodes = [self.get_stator_rotor_bond()['bond_stator_node'],
                      self.get_stator_rotor_bond()['bond_rotor_node']]
@@ -791,7 +884,7 @@ class Motor(Molecule):
         old_subgraph_nodes = set(old_nodes)
         old_subgraph_edges = set()
         for node in old_nodes:
-            adj_nodes = list(G_un.adj[node])
+            adj_nodes = list(self.G.adj[node])
             old_subgraph_nodes.update(adj_nodes)
             old_subgraph_edges.update((node, adj_node)
                                       for adj_node in adj_nodes)
@@ -804,7 +897,7 @@ class Motor(Molecule):
         new_subgraph_nodes = set(new_nodes)
         new_subgraph_edges = set()
         for node in new_nodes:
-            adj_nodes = list(other_un.adj[node])
+            adj_nodes = list(other.G.adj[node])
             new_subgraph_nodes.update(adj_nodes)
             new_subgraph_edges.update((node, adj_node)
                                       for adj_node in adj_nodes)
@@ -821,14 +914,14 @@ class Motor(Molecule):
 
     def find_rotation_atoms(self, settings=None):
         if settings is None or settings['mode'] == 'default':
-            ana = Analysis(self.atoms)
+            ana = Analysis(self)
             bonds = self.get_bonds_without()
             # print(f'{bonds = }')
             stator_rotor = self.find_bond()
             zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
                 'stator_neighbours'][0], stator_rotor['stator_neighbours'][1]
         elif settings['mode'] == 'bond_x':
-            ana = Analysis(self.atoms)
+            ana = Analysis(self)
             bonds = self.get_bonds_without()
             # print(f'{bonds = }')
             stator_rotor = self.find_bond()
@@ -838,3 +931,156 @@ class Motor(Molecule):
             zero_atom, x_atom, no_z_atom = settings['zero_atom'], settings['x_atom'], settings['no_z_atom']
 
         return zero_atom, x_atom, no_z_atom
+
+    def reorder(self, mapping: dict):
+        """
+        Reorders the atoms in the Motor instance based on the provided mapping.
+
+        Parameters:
+            - mapping (dict): A dictionary where keys are current indices and values are target indices.
+
+        Returns:
+            - Motor: A new Motor instance with atoms reordered based on the mapping.
+        """
+        reordered_molecule = super().reorder(
+            mapping)  # Call the reorder method from the Molecule class
+        # Convert the reordered molecule to a Motor instance and return
+        return Motor(reordered_molecule)
+
+
+class Path:
+    def __init__(self, images=None):
+        if images is None:
+            self.images = []
+        else:
+            # Convert images to appropriate type
+            converted_images = [self._convert_type(img) for img in images]
+
+            # Check if any image is of the Motor class
+            contains_motor = any(isinstance(image, Motor)
+                                 for image in converted_images)
+            if contains_motor:
+                # Convert all images to Motor class
+                converted_images = [Motor(image) if not isinstance(
+                    image, Motor) else image for image in converted_images]
+            else:
+                # Convert all images to Molecule class
+                converted_images = [Molecule(image) if not isinstance(
+                    image, Molecule) else image for image in converted_images]
+
+            # Check that all images satisfy __eq__ requirements
+            reference_image = converted_images[0]
+            for idx, img in enumerate(converted_images[1:], start=1):
+                if reference_image != img:
+                    warn(
+                        f"The image at index {idx} does not satisfy the equality requirements with the first image.")
+
+            # Initialize the self.images attribute
+            self.images = converted_images
+
+    def _get_type(self):
+        """Retrieve the type of the images in the path."""
+        return type(self[0]) if self.images else None
+
+    def _convert_type(self, image):
+        """Convert the image to the type of images in the path."""
+        if not self.images:
+            return image
+        current_type = self._get_type()
+        return current_type(image)
+
+    def __getitem__(self, index):
+        """Retrieve an image at the specified index."""
+        return self.images[index]
+
+    def __setitem__(self, index, image):
+        """Replace an image at the specified index."""
+        converted_image = self._convert_type(image)
+
+        # Check for equality with the first image in the path
+        if len(self.images) > 0 and self.images[0] != converted_image:
+            warn(f"The provided image does not satisfy the equality requirements with the first image in the path.")
+
+        self.images[index] = converted_image
+
+    def __iter__(self):
+        """Make the class iterable."""
+        return iter(self.images)
+
+    def __len__(self):
+        """Return the number of images in the list."""
+        return len(self.images)
+
+    def append(self, image):
+        """Add a new image to the list."""
+        # Convert the image to the appropriate type
+        converted_image = self._convert_type(image)
+
+        # Check if the image satisfies __eq__ requirements with the existing images
+        if self.images and not all(img == converted_image for img in self.images):
+            warn("The appended image does not satisfy the equality requirements with existing images in the path.")
+
+        self.images.append(converted_image)
+
+    def remove_image(self, index):
+        """Remove an image from the list at the specified index."""
+        del self.images[index]
+
+    def save(self, filename):
+        """Save all images in the list to a file."""
+        write(filename, self.images)
+
+    def load(self, filename):
+        """Load images from a file and add them to the list."""
+        self.images = read(filename, index=':')
+
+    def render(self):
+        current_idx = 0
+        p = render_molecule_from_atoms(self[current_idx])
+        print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
+
+        def key_press(event):
+            nonlocal current_idx
+            if event.key == 'n' and current_idx < len(self) - 1:
+                current_idx += 1
+                # Update the rendered molecule with the next one in the path
+                p.clear()
+                p = render_molecule_from_atoms(self[current_idx])
+                p.show()
+            elif event.key == 'p' and current_idx > 0:
+                current_idx -= 1
+                # Update the rendered molecule with the previous one in the path
+                p.clear()
+                p = render_molecule_from_atoms(self[current_idx])
+                p.show()
+            elif event.key == 'q':
+                # Exit the rendering
+                p.close()
+
+        p.add_key_event('n', key_press)
+        p.add_key_event('p', key_press)
+        p.add_key_event('q', key_press)
+        p.show()
+
+    def rotate(self):
+        assert isinstance(self[0], Motor)
+        for motor in self:
+            motor.rotate(*motor.find_rotation_atoms())
+
+    def reorder_atoms_of_intermediate_images(self):
+        half_len = len(self) // 2
+
+        for i in range(1, half_len + 1):
+            mapping = self[i - 1].best_mapping(self[i])
+            if mapping is None:
+                raise ValueError(
+                    f"No valid mapping found for molecules at index {i} and {i-1}.")
+            self[i] = self[i].reorder(mapping)
+
+        # Adjust from the end towards the center
+        for i in range(len(self) - 2, half_len - 1, -1):
+            mapping = self[i + 1].best_mapping(self[i])
+            if mapping is None:
+                raise ValueError(
+                    f"No valid mapping found for molecules at index {i} and {i+1}.")
+            self[i] = self[i].reorder(mapping)
