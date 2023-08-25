@@ -541,10 +541,14 @@ class Molecule(Atoms):
             [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
         self.set_positions(positions)
 
-    def atoms_to_xyz_string(self):
+    def to_xyz_string(self):
         sio = io.StringIO()
         write(sio, self, format="xyz")
         return sio.getvalue()
+
+    def save(self, filename):
+        with open(filename, "w") as text_file:
+            text_file.write(self.to_xyz_string())
 
     def _to_cacheable_format(self):
         """Convert the Motor object into a cacheable format based on atomic positions and symbols."""
@@ -680,7 +684,7 @@ class Fragment(Molecule):
         else:
             return p
 
-    def fragment_to_xyz_string(self):
+    def to_xyz_string(self):
         # Convert attach matrix to string
         matrix_string = ' '.join([' '.join(map(str, row))
                                   for row in self.attach_matrix])
@@ -689,14 +693,11 @@ class Fragment(Molecule):
         fragment_info = f'Fragment: {self.attach_atom} {matrix_string}'
 
         # Construct the save string
-        atom_info = self.atoms_to_xyz_string().split('\n', 1)[1].strip()
-        return self.atoms_to_xyz_string().split('\n', 1)[0] + '\n' + fragment_info + '\n' + atom_info
+        atom_info = super().to_xyz_string().split('\n')
+        main_part='\n'.join(atom_info[2:])
+        return f"{atom_info[0]}\n{fragment_info}\n{main_part}"
 
-    def save(self, filename):
-        with open(filename, "w") as text_file:
-            text_file.write(self.fragment_to_xyz_string())
-
-    def connect_fragment(self, fragment: Fragment):
+    def connect_fragment(self, fragment: Fragment, check_bonds_quantity = False):
         _fragment = fragment.copy()
         _fragment.set_to_origin()
         _fragment.apply_rotation(self.attach_matrix)
@@ -705,6 +706,23 @@ class Fragment(Molecule):
         del molecule[molecule.attach_atom]
         molecule = Molecule(molecule)
         molecule.extend(_fragment)
+        if check_bonds_quantity:
+            scale_factor=0.01
+            while len(molecule.get_all_bonds()) != len(self.get_all_bonds()) + len(_fragment.get_all_bonds()):
+                print(f'{len(molecule.get_all_bonds()) = } {len(self.get_all_bonds()) + len(_fragment.get_all_bonds()) = }')
+                scale_factor+=0.01
+                print(f'{scale_factor = }')
+                _fragment = fragment.copy()
+                _fragment.set_to_origin()
+                random_matrix = np.random.rand(3, 3) * scale_factor
+                attach_matrix=self.attach_matrix+random_matrix
+                _fragment.apply_rotation(attach_matrix)
+                _fragment.apply_transition(self.attach_point)
+                molecule = self.copy()
+                del molecule[molecule.attach_atom]
+                molecule = Molecule(molecule)
+                molecule.extend(_fragment)
+
         return molecule
 
     # def __add__(self, fragment):
@@ -1016,6 +1034,16 @@ class Path:
         # print(f'{current_type = }')
         return current_type(image)
 
+    def __getattr__(self, attr):
+        """
+        If the attribute (method in this context) is not found, 
+        this method is called.
+        """
+        def method(*args, **kwargs):
+            return [getattr(image, attr)(*args, **kwargs) for image in self.images]
+        
+        return method
+
     def __getitem__(self, index):
         """Retrieve an image at the specified index."""
         return self.images[index]
@@ -1081,7 +1109,7 @@ class Path:
 
     def load(self, filename):
         """Load images from a file and add them to the list."""
-        self.images = read(filename, index=':')
+        self.images = [self._convert_type(image) for image in read(filename, index=':')]
 
     def render(self):
         current_idx = 0
@@ -1173,3 +1201,29 @@ class Path:
 
         if len(l) > 0:
             warn.warnings(f'Problem wasn\'t fixed. Holes:{l}')
+
+    def to_xyz_string(self):
+        return "".join([image.to_xyz_string() for image in self])
+
+    def save(self, filename):
+        with open(filename, "w") as text_file:
+            text_file.write(self.to_xyz_string())
+    
+    def to_allxyz_string(self):
+        return ">\n".join([image.to_xyz_string() for image in self])
+
+    def save_as_allxyz(self, filename):
+        with open(filename, "w") as text_file:
+            text_file.write(self.to_allxyz_string())
+
+    def __str__(self):
+        info = [
+            f"Path Information:",
+            f"Number of Images: {len(self)}",
+            f"Image Type: {self._get_type().__name__ if self._get_type() else 'None'}",
+            f"First Image:\n{self[0] if len(self) > 0 else 'None'}",
+            f"Last Image:\n{self[-1] if len(self) > 0 else 'None'}",
+        ]
+
+        return "\n".join(info)
+
