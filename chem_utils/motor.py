@@ -694,10 +694,10 @@ class Fragment(Molecule):
 
         # Construct the save string
         atom_info = super().to_xyz_string().split('\n')
-        main_part='\n'.join(atom_info[2:])
+        main_part = '\n'.join(atom_info[2:])
         return f"{atom_info[0]}\n{fragment_info}\n{main_part}"
 
-    def connect_fragment(self, fragment: Fragment, check_bonds_quantity = False):
+    def connect_fragment(self, fragment: Fragment, check_bonds_quantity=False):
         _fragment = fragment.copy()
         _fragment.set_to_origin()
         _fragment.apply_rotation(self.attach_matrix)
@@ -707,15 +707,16 @@ class Fragment(Molecule):
         molecule = Molecule(molecule)
         molecule.extend(_fragment)
         if check_bonds_quantity:
-            scale_factor=0.01
+            scale_factor = 0.01
             while len(molecule.get_all_bonds()) != len(self.get_all_bonds()) + len(_fragment.get_all_bonds()):
-                print(f'{len(molecule.get_all_bonds()) = } {len(self.get_all_bonds()) + len(_fragment.get_all_bonds()) = }')
-                scale_factor+=0.01
+                print(
+                    f'{len(molecule.get_all_bonds()) = } {len(self.get_all_bonds()) + len(_fragment.get_all_bonds()) = }')
+                scale_factor += 0.01
                 print(f'{scale_factor = }')
                 _fragment = fragment.copy()
                 _fragment.set_to_origin()
                 random_matrix = np.random.rand(3, 3) * scale_factor
-                attach_matrix=self.attach_matrix+random_matrix
+                attach_matrix = self.attach_matrix+random_matrix
                 _fragment.apply_rotation(attach_matrix)
                 _fragment.apply_transition(self.attach_point)
                 molecule = self.copy()
@@ -1034,6 +1035,19 @@ class Path:
         # print(f'{current_type = }')
         return current_type(image)
 
+    def to_type(self, new_type):
+        """
+        Convert all images in the path to the specified type.
+
+        Parameters:
+        - new_type (type): The desired type to which all images should be converted.
+        """
+        if not isinstance(new_type, type):
+            raise TypeError(f"Expected 'new_type' to be a type, got {type(new_type)}")
+
+        self.images = [new_type(image) for image in self.images]
+
+
     def __getattr__(self, attr):
         """
         If the attribute (method in this context) is not found, 
@@ -1041,7 +1055,7 @@ class Path:
         """
         def method(*args, **kwargs):
             return [getattr(image, attr)(*args, **kwargs) for image in self.images]
-        
+
         return method
 
     def __getitem__(self, index):
@@ -1050,35 +1064,37 @@ class Path:
 
     def __setitem__(self, index, image):
         """Replace an image at the specified index."""
-        
+
         # Handle single integer index
         if isinstance(index, int):
             converted_image = self._convert_type(image)
             # Check for equality with the first image in the path
             if len(self.images) > 0 and self.images[0] != converted_image:
-                warn(f"The provided image does not satisfy the equality requirements with the first image in the path.")
+                warn(
+                    f"The provided image does not satisfy the equality requirements with the first image in the path.")
             self.images[index] = converted_image
             return
-        
+
         # Handle slices
         if isinstance(index, slice):
             start, stop, step = index.indices(len(self.images))
             if not isinstance(image, (list, tuple)):
-                raise ValueError("For slice assignment, the image must be a list or tuple of images.")
+                raise ValueError(
+                    "For slice assignment, the image must be a list or tuple of images.")
             for i, img in zip(range(start, stop, step), image):
                 self[i] = img
             return
-        
+
         # Handle lists or other iterables
         if isinstance(index, (list, tuple)):
             if not isinstance(image, (list, tuple)) or len(index) != len(image):
-                raise ValueError("For list or tuple assignment, the image must be a list or tuple of images with the same length as the index.")
+                raise ValueError(
+                    "For list or tuple assignment, the image must be a list or tuple of images with the same length as the index.")
             for i, img in zip(index, image):
                 self[i] = img
             return
 
         raise TypeError(f"Index of type {type(index)} is not supported.")
-
 
     def __iter__(self):
         """Make the class iterable."""
@@ -1109,32 +1125,8 @@ class Path:
 
     def load(self, filename):
         """Load images from a file and add them to the list."""
-        self.images = [self._convert_type(image) for image in read(filename, index=':')]
-
-    def render(self):
-        current_idx = 0
-        p = render_molecule_from_atoms(self[current_idx])
-        print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
-
-        def key_press(obj, event):
-            nonlocal current_idx
-            key = obj.GetKeySym()  # Get the pressed key
-            if key == 'n' and current_idx < len(self) - 1:
-                current_idx += 1
-            elif key == 'p' and current_idx > 0:
-                current_idx -= 1
-            elif key == 'q':
-                # Exit the rendering
-                p.close()
-                return
-            # Update the rendered molecule based on the current_idx
-            p.clear()
-            render_molecule_from_atoms(self[current_idx], p)
-            p.reset_camera()
-            p.render()
-
-        p.iren.add_observer('KeyPressEvent', key_press)
-        p.show()
+        self.images = [self._convert_type(image)
+                       for image in read(filename, index=':')]
 
     def rotate(self):
         assert isinstance(self[0], Motor)
@@ -1184,23 +1176,24 @@ class Path:
 
         for hole, length in l:
             # print(f'{hole = } {length = }')
-            self[hole:hole+length] = self[hole-1].linear_interploation(self[hole+length], n=length).images
+            self[hole:hole+length] = self[hole -
+                                          1].linear_interploation(self[hole+length], n=length).images
 
         l = self.find_holes()
 
         if len(l) > 0:
-            warn.warnings(
+            warnings.warn(
                 f'Linear interpolation didn\'t fix the problem. Holes:{l}')
-            for hole, length in holes(bonds):
+            for hole, length in l:
                 # print(f'{hole = } {length = }')
                 for i in range(hole, hole+length):
                     p = self[hole-1].copy()
-                    path[i] = p
+                    self[i] = p
 
         l = self.find_holes()
 
         if len(l) > 0:
-            warn.warnings(f'Problem wasn\'t fixed. Holes:{l}')
+            warnings.warn(f'Problem wasn\'t fixed. Holes:{l}')
 
     def to_xyz_string(self):
         return "".join([image.to_xyz_string() for image in self])
@@ -1208,7 +1201,7 @@ class Path:
     def save(self, filename):
         with open(filename, "w") as text_file:
             text_file.write(self.to_xyz_string())
-    
+
     def to_allxyz_string(self):
         return ">\n".join([image.to_xyz_string() for image in self])
 
@@ -1226,4 +1219,63 @@ class Path:
         ]
 
         return "\n".join(info)
+
+    def render(self):
+        current_idx = 0
+        p = render_molecule_from_atoms(self[current_idx])
+        print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
+
+        def key_press(obj, event):
+            nonlocal current_idx
+            key = obj.GetKeySym()  # Get the pressed key
+            if key == 'n' and current_idx < len(self) - 1:
+                current_idx += 1
+            elif key == 'p' and current_idx > 0:
+                current_idx -= 1
+            elif key == 'q':
+                # Exit the rendering
+                p.close()
+                return
+            # Update the rendered molecule based on the current_idx
+            p.clear()
+            render_molecule_from_atoms(self[current_idx], p)
+            p.reset_camera()
+            p.render()
+
+        p.iren.add_observer('KeyPressEvent', key_press)
+        p.show()
+
+    def render_alongside(self, other, alpha=1.0):
+        current_idx = 0
+        p = render_molecule_from_atoms(self[current_idx])
+
+        if isinstance(other, Path):
+            render_molecule_from_atoms(other[current_idx], p, alpha=alpha)
+            print("Press 'n' to move to the next pair of molecules, 'p' to go back, and 'q' to quit.")
+
+            def key_press(obj, event):
+                nonlocal current_idx
+                key = obj.GetKeySym()  # Get the pressed key
+                if key == 'n' and current_idx < min(len(self), len(other)) - 1:
+                    current_idx += 1
+                elif key == 'p' and current_idx > 0:
+                    current_idx -= 1
+                elif key == 'q':
+                    # Exit the rendering
+                    p.close()
+                    return
+                # Update the rendered molecules based on the current_idx
+                p.clear()
+                render_molecule_from_atoms(self[current_idx], p)
+                render_molecule_from_atoms(other[current_idx], p, alpha=alpha)
+                p.reset_camera()
+                p.render()
+
+            p.iren.add_observer('KeyPressEvent', key_press)
+        elif isinstance(other, ase.Atoms):
+            render_molecule_from_atoms(other, p, alpha=alpha)
+        else:
+            raise TypeError(f"Expected other to be of type Path or ase.Atoms, got {type(other)}")
+
+        p.show()
 
