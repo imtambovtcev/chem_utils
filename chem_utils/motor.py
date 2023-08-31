@@ -243,6 +243,16 @@ class Molecule(Atoms):
         # print(f'{unique_bonds = }')
         self.G.add_edges_from(unique_bonds)
 
+    @classmethod
+    def load(cls, filename):
+        # Use ASE's read function to get Atoms object from file
+        atoms = read(filename)
+        
+        # Create a Molecule instance from the Atoms object
+        molecule = cls(atoms)
+        
+        return molecule
+
     def __eq__(self, other: Atoms):
         '''
         Molecules are equal if they have the same atoms
@@ -563,35 +573,6 @@ class Molecule(Atoms):
             path.append(new_atmos)
         return path
 
-
-def read_fragment(filename):
-    with open(filename, "r") as file:
-        # Read number of atoms
-        num_atoms = int(file.readline().strip())
-
-        # Parse the "Fragment" line
-        fragment_line = file.readline().strip().split()
-        attach_atom = int(fragment_line[1])
-        matrix_values = list(map(float, fragment_line[2:]))
-        attach_matrix = np.array([matrix_values[i:i+3]
-                                 for i in range(0, len(matrix_values), 3)])
-
-        # Read Atoms
-        symbols = []
-        positions = []
-        for _ in range(num_atoms):
-            line = file.readline().strip().split()
-            atom, x, y, z = line[0], float(
-                line[1]), float(line[2]), float(line[3])
-            symbols.append(atom)
-            positions.append([x, y, z])
-
-        # Initialize the Atoms object using ase
-        atoms = Atoms(symbols=symbols, positions=positions)
-
-        return Fragment(atoms, attach_atom=attach_atom, attach_matrix=attach_matrix)
-
-
 class Fragment(Molecule):
     def __init__(self, *args, attach_atom=None, attach_matrix=None, **kwargs):
         # If the first argument is an instance of Fragment
@@ -608,6 +589,34 @@ class Fragment(Molecule):
             self.attach_atom = attach_atom
             self.attach_matrix = np.eye(
                 3) if attach_matrix is None else attach_matrix
+
+    @classmethod
+    def load(cls, filename):
+        with open(filename, "r") as file:
+            # Read number of atoms
+            num_atoms = int(file.readline().strip())
+
+            # Parse the "Fragment" line
+            fragment_line = file.readline().strip().split()
+            attach_atom = int(fragment_line[1])
+            matrix_values = list(map(float, fragment_line[2:]))
+            attach_matrix = np.array([matrix_values[i:i+3]
+                                     for i in range(0, len(matrix_values), 3)])
+
+            # Read Atoms
+            symbols = []
+            positions = []
+            for _ in range(num_atoms):
+                line = file.readline().strip().split()
+                atom, x, y, z = line[0], float(
+                    line[1]), float(line[2]), float(line[3])
+                symbols.append(atom)
+                positions.append([x, y, z])
+
+            # Initialize the Atoms object using ase
+            atoms = Atoms(symbols=symbols, positions=positions)
+
+            return cls(atoms, attach_atom=attach_atom, attach_matrix=attach_matrix)
 
     @property
     def attach_point(self):
@@ -1123,10 +1132,11 @@ class Path:
         """Save all images in the list to a file."""
         write(filename, self.images)
 
-    def load(self, filename):
-        """Load images from a file and add them to the list."""
-        self.images = [self._convert_type(image)
-                       for image in read(filename, index=':')]
+    @classmethod
+    def load(cls, filename):
+        """Load images from a file and return a new Path object with those images."""
+        images = [cls._convert_type(image) for image in read(filename, index=':')]
+        return cls(images=images)
 
     def rotate(self):
         assert isinstance(self[0], Motor)
