@@ -12,3 +12,4 @@ from .plot_scheme import *
 from .render_molecule import render_molecule
 from .rotate_path import rotate_path
 from .xyz_from_allxyz import allxyz_to_xyz
+from .geometry_convergence_plot import plot_convergence
