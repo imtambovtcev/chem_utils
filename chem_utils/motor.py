@@ -503,7 +503,7 @@ class Molecule(Atoms):
 
     def render_alongside(self, other, alpha=1.0, show=True):
         p = render_molecule_from_atoms(self)
-        p = render_molecule_from_atoms(other.atoms, p, alpha=alpha)
+        p = render_molecule_from_atoms(other, p, alpha=alpha)
         # print(p)
         if show:
             p.show()
@@ -903,12 +903,22 @@ class Motor(Molecule):
     def get_tails(self):
         f_b = self.get_stator_rotor_bond()
         b_b = self.get_break_bonds()
+        # print(f'{f_b = }')
+        # print(f'{b_b = }')
 
         if any(f_b['C_H_rotor'] in b for b in b_b):
             split_bond = [b for b in b_b if f_b['C_H_rotor'] in b]
+            # print(f'{split_bond = }')
             if not split_bond:
                 return []  # Return empty list if split_bond is empty
             split_bond = split_bond[0]
+            a,b = self.divide_in_two(split_bond)
+            tail_fragment = b if f_b['C_H_rotor'] in a else a
+            # print(f'{a = }')
+            # print(f'{f_b["C_H_rotor"] = }')
+            assert f_b['C_H_rotor'] not in tail_fragment
+            return [node for node in tail_fragment if self.G.nodes[node]['label'] in ['F', 'H']]
+        
         else:
             for i in self.G[f_b['C_H_rotor']]:
                 tail_C = i
@@ -1135,8 +1145,7 @@ class Path:
     @classmethod
     def load(cls, filename):
         """Load images from a file and return a new Path object with those images."""
-        images = [cls._convert_type(image) for image in read(filename, index=':')]
-        return cls(images=images)
+        return cls(read(filename, index=':'))
 
     def rotate(self):
         assert isinstance(self[0], Motor)
