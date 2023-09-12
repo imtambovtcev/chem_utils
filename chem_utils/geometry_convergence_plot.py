@@ -3,13 +3,15 @@ import re
 import sys
 import numpy as np
 
+
 def extract_all_convergence_data(text_content):
     # Initialize an empty dictionary to store extracted data
     data = {}
     all_criteria = set()  # Keep track of all criteria encountered
 
     # Pattern to match criterion, value, and tolerance
-    pattern = re.compile(r"([A-Za-z\s\(\)\|]+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)")
+    pattern = re.compile(
+        r"([A-Za-z\s\(\)\|]+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)")
 
     # Flags
     is_convergence_block = False
@@ -35,17 +37,21 @@ def extract_all_convergence_data(text_content):
                 criterion, value, tolerance = match_group
                 criterion = criterion.strip()
                 all_criteria.add(criterion)
-                block_data[criterion] = {"values": float(value), "tolerances": float(tolerance)}
+                block_data[criterion] = {"values": float(
+                    value), "tolerances": float(tolerance)}
             if "........................................................" in line or "-----" in line:
                 is_convergence_block = False
 
                 # Append data to the main data dictionary
                 for criterion in all_criteria:
                     if criterion not in data:
-                        data[criterion] = {"values": [np.nan]*block_number, "tolerances": [np.nan]*block_number}
+                        data[criterion] = {"values": [
+                            np.nan]*block_number, "tolerances": [np.nan]*block_number}
                     if criterion in block_data:
-                        data[criterion]["values"].append(block_data[criterion]["values"])
-                        data[criterion]["tolerances"].append(block_data[criterion]["tolerances"])
+                        data[criterion]["values"].append(
+                            block_data[criterion]["values"])
+                        data[criterion]["tolerances"].append(
+                            block_data[criterion]["tolerances"])
                     else:
                         data[criterion]["values"].append(np.nan)
                         data[criterion]["tolerances"].append(np.nan)
@@ -65,17 +71,21 @@ def extract_all_convergence_data(text_content):
                     values[i] = non_nan_values[-1]
                 else:
                     # Find the nearest non-nan value
-                    left_non_nan = next((x for x in values[i::-1] if not np.isnan(x)), None)
-                    right_non_nan = next((x for x in values[i:] if not np.isnan(x)), None)
+                    left_non_nan = next(
+                        (x for x in values[i::-1] if not np.isnan(x)), None)
+                    right_non_nan = next(
+                        (x for x in values[i:] if not np.isnan(x)), None)
                     if left_non_nan is None:
                         values[i] = right_non_nan
                     elif right_non_nan is None:
                         values[i] = left_non_nan
                     else:
                         # Choose the closer non-nan value
-                        values[i] = left_non_nan if (i - values[i::-1].index(left_non_nan)) < values[i:].index(right_non_nan) else right_non_nan
+                        values[i] = left_non_nan if (
+                            i - values[i::-1].index(left_non_nan)) < values[i:].index(right_non_nan) else right_non_nan
 
     return data
+
 
 def plot_convergence(text_content, print_data=True):
     data = extract_all_convergence_data(text_content)
@@ -86,26 +96,29 @@ def plot_convergence(text_content, print_data=True):
             print("Values:", values["values"])
             print("Tolerances:", values["tolerances"])
             print("-" * 50)
-    
+
     # Determine the number of subplots based on the data
     n_plots = len(data)
-    
+
     # Plot
     fig, axs = plt.subplots(n_plots, 1, figsize=(10, 3 * n_plots))
-    
+
     if n_plots == 1:
         axs = [axs]
-    
+
     idx = 0
     for criterion, values in data.items():
         x = range(len(values["values"]))
-        axs[idx].fill_between(x, [-abs(t) for t in values["tolerances"]], [abs(t) for t in values["tolerances"]], color='blue', alpha=0.2, zorder=1)
-        
+        axs[idx].fill_between(x, [-abs(t) for t in values["tolerances"]], [abs(t)
+                              for t in values["tolerances"]], color='blue', alpha=0.2, zorder=1)
+
         # Set color based on convergence region
-        colors = ['red' if abs(val) > tol else 'blue' for val, tol in zip(values["values"], values["tolerances"])]
+        colors = ['red' if abs(val) > tol else 'blue' for val, tol in zip(
+            values["values"], values["tolerances"])]
         axs[idx].scatter(x, values["values"], c=colors, zorder=3)
-        axs[idx].plot(values["values"], color='black', linestyle='dashed', zorder=2)
-        
+        axs[idx].plot(values["values"], color='black',
+                      linestyle='dashed', zorder=2)
+
         axs[idx].set_title(f'{criterion} Convergence')
         axs[idx].set_ylabel(criterion)
         axs[idx].set_yscale('symlog')  # Set y-axis to symlog scale
@@ -123,6 +136,7 @@ def plot_convergence(text_content, print_data=True):
     plt.tight_layout()
     plt.show()
 
+
 def main():
     if len(sys.argv) == 2:  # Only the orca output file is provided
         p = sys.argv[1]
@@ -137,8 +151,10 @@ def main():
         plot_convergence(content)
         plt.savefig(save)
     else:
-        print("Usage: geometry_convergence_plot <path_to_orca_out> [path_to_save_plot]")
+        print(
+            "Usage: geometry_convergence_plot <path_to_orca_out> [path_to_save_plot]")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
