@@ -1,109 +1,140 @@
-import sys
 import matplotlib.pyplot as plt
+import re
+import sys
+import numpy as np
 
-def plot_convergence(file_path, save_path=None):
-    with open(file_path, 'r') as f:
-        lines = f.readlines()
+def extract_all_convergence_data(text_content):
+    # Initialize an empty dictionary to store extracted data
+    data = {}
+    all_criteria = set()  # Keep track of all criteria encountered
 
-    # Lists to store data
-    energy_changes = []
-    rms_gradients = []
-    max_gradients = []
-    rms_steps = []
-    max_steps = []
-    
-    # Lists to store tolerance
-    energy_tolerance = []
-    rms_gradient_tolerance = []
-    max_gradient_tolerance = []
-    rms_step_tolerance = []
-    max_step_tolerance = []
+    # Pattern to match criterion, value, and tolerance
+    pattern = re.compile(r"([A-Za-z\s\(\)\|]+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)\s+(-?\d+\.\d+|\d+\.\d+e[+-]\d+)")
 
     # Flags
     is_convergence_block = False
+    is_header_line = False
+    block_data = {}  # Temporary storage for each block
+    block_number = 0
 
-    # Loop through lines
-    for line in lines:
-        if "Geometry convergence" in line:
+    # Loop through lines of the text content
+    for line in text_content.split('\n'):
+        if "Geometry convergence" in line or "CI-NEB convergence" in line:
             is_convergence_block = True
+            block_number += 1
             continue
         if is_convergence_block:
-            values = line.split()
-            if "Energy change" in line:
-                energy_changes.append(float(values[2]))
-                if values[4].replace('.', '', 1).isdigit():
-                    energy_tolerance.append(float(values[4]))
-            elif "RMS gradient" in line:
-                rms_gradients.append(float(values[2]))
-                if values[4].replace('.', '', 1).isdigit():
-                    rms_gradient_tolerance.append(float(values[4]))
-            elif "MAX gradient" in line:
-                max_gradients.append(float(values[2]))
-                if values[4].replace('.', '', 1).isdigit():
-                    max_gradient_tolerance.append(float(values[4]))
-            elif "RMS step" in line:
-                rms_steps.append(float(values[2]))
-                if values[4].replace('.', '', 1).isdigit():
-                    rms_step_tolerance.append(float(values[4]))
-            elif "MAX step" in line:
-                max_steps.append(float(values[2]))
-                if values[4].replace('.', '', 1).isdigit():
-                    max_step_tolerance.append(float(values[4]))
-            elif "........................................................" in line:
+            if "Item                value" in line:
+                is_header_line = True
+                continue  # Skip the header line
+            if is_header_line and ("------" in line or "......" in line):
+                is_header_line = False
+                continue  # Skip the line following the header
+            matches = pattern.findall(line)
+            for match_group in matches:
+                criterion, value, tolerance = match_group
+                criterion = criterion.strip()
+                all_criteria.add(criterion)
+                block_data[criterion] = {"values": float(value), "tolerances": float(tolerance)}
+            if "........................................................" in line or "-----" in line:
                 is_convergence_block = False
 
+                # Append data to the main data dictionary
+                for criterion in all_criteria:
+                    if criterion not in data:
+                        data[criterion] = {"values": [np.nan]*block_number, "tolerances": [np.nan]*block_number}
+                    if criterion in block_data:
+                        data[criterion]["values"].append(block_data[criterion]["values"])
+                        data[criterion]["tolerances"].append(block_data[criterion]["tolerances"])
+                    else:
+                        data[criterion]["values"].append(np.nan)
+                        data[criterion]["tolerances"].append(np.nan)
+
+                block_data = {}
+
+    # Before returning data, fill missing tolerances with nearest neighbor values
+    for criterion, values_dict in data.items():
+        values = values_dict["tolerances"]
+        for i in range(len(values)):
+            if np.isnan(values[i]):
+                # Find the nearest non-nan value
+                non_nan_values = [val for val in values if not np.isnan(val)]
+                if i == 0:  # If the first value is nan
+                    values[i] = non_nan_values[0]
+                elif i == len(values) - 1:  # If the last value is nan
+                    values[i] = non_nan_values[-1]
+                else:
+                    # Find the nearest non-nan value
+                    left_non_nan = next((x for x in values[i::-1] if not np.isnan(x)), None)
+                    right_non_nan = next((x for x in values[i:] if not np.isnan(x)), None)
+                    if left_non_nan is None:
+                        values[i] = right_non_nan
+                    elif right_non_nan is None:
+                        values[i] = left_non_nan
+                    else:
+                        # Choose the closer non-nan value
+                        values[i] = left_non_nan if (i - values[i::-1].index(left_non_nan)) < values[i:].index(right_non_nan) else right_non_nan
+
+    return data
+
+def plot_convergence(text_content, print_data=True):
+    data = extract_all_convergence_data(text_content)
+    # Print the extracted data if print_data is True
+    if print_data:
+        for criterion, values in data.items():
+            print(f"{criterion}:")
+            print("Values:", values["values"])
+            print("Tolerances:", values["tolerances"])
+            print("-" * 50)
+    
+    # Determine the number of subplots based on the data
+    n_plots = len(data)
+    
     # Plot
-    fig, axs = plt.subplots(5, 1, figsize=(10, 15))
+    fig, axs = plt.subplots(n_plots, 1, figsize=(10, 3 * n_plots))
+    
+    if n_plots == 1:
+        axs = [axs]
+    
+    idx = 0
+    for criterion, values in data.items():
+        x = range(len(values["values"]))
+        axs[idx].fill_between(x, [-abs(t) for t in values["tolerances"]], [abs(t) for t in values["tolerances"]], color='blue', alpha=0.2, zorder=1)
+        
+        # Set color based on convergence region
+        colors = ['red' if abs(val) > tol else 'blue' for val, tol in zip(values["values"], values["tolerances"])]
+        axs[idx].scatter(x, values["values"], c=colors, zorder=3)
+        axs[idx].plot(values["values"], color='black', linestyle='dashed', zorder=2)
+        
+        axs[idx].set_title(f'{criterion} Convergence')
+        axs[idx].set_ylabel(criterion)
+        axs[idx].set_yscale('symlog')  # Set y-axis to symlog scale
+        axs[idx].set_xticks(x)
+        axs[idx].grid(True)
 
-    x_energy = range(len(energy_changes))
-    axs[0].fill_between(x_energy, -abs(energy_tolerance[0]), abs(energy_tolerance[0]), color='orange', alpha=0.2)
-    axs[0].plot(energy_changes, marker='o')
-    axs[0].set_title('Energy Change Convergence')
-    axs[0].set_ylabel('Energy Change')
-    axs[0].grid(True)
+        # Adjust y-ticks to 2 decimal places
+        locs = axs[idx].get_yticks()
+        new_locs = [round(loc, 2) for loc in locs]
+        axs[idx].set_yticks(new_locs)
+        axs[idx].set_yticklabels([f"{loc:.2f}" for loc in new_locs])
 
-    x_rms_gradient = range(len(rms_gradients))
-    axs[1].fill_between(x_rms_gradient, -abs(rms_gradient_tolerance[0]), abs(rms_gradient_tolerance[0]), color='orange', alpha=0.2)
-    axs[1].plot(rms_gradients, marker='o')
-    axs[1].set_title('RMS Gradient Convergence')
-    axs[1].set_ylabel('RMS Gradient')
-    axs[1].grid(True)
-
-    x_max_gradient = range(len(max_gradients))
-    axs[2].fill_between(x_max_gradient, -abs(max_gradient_tolerance[0]), abs(max_gradient_tolerance[0]), color='orange', alpha=0.2)
-    axs[2].plot(max_gradients, marker='o')
-    axs[2].set_title('MAX Gradient Convergence')
-    axs[2].set_ylabel('MAX Gradient')
-    axs[2].grid(True)
-
-    x_rms_step = range(len(rms_steps))
-    axs[3].fill_between(x_rms_step, -abs(rms_step_tolerance[0]), abs(rms_step_tolerance[0]), color='orange', alpha=0.2)
-    axs[3].plot(rms_steps, marker='o')
-    axs[3].set_title('RMS Step Convergence')
-    axs[3].set_ylabel('RMS Step')
-    axs[3].grid(True)
-
-    x_max_step = range(len(max_steps))
-    axs[4].fill_between(x_max_step, -abs(max_step_tolerance[0]), abs(max_step_tolerance[0]), color='orange', alpha=0.2)
-    axs[4].plot(max_steps, marker='o')
-    axs[4].set_title('MAX Step Convergence')
-    axs[4].set_ylabel('MAX Step')
-    axs[4].grid(True)
+        idx += 1
 
     plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path)
     plt.show()
 
 def main():
     if len(sys.argv) == 2:  # Only the orca output file is provided
         p = sys.argv[1]
-        plot_convergence(p)
-        plt.show()
+        with open(p, 'r') as f:
+            content = f.read()
+        plot_convergence(content)
     elif len(sys.argv) == 3:  # Both the orca output file and save path are provided
         p = sys.argv[1]
         save = sys.argv[2]
-        plot_convergence(p)
+        with open(p, 'r') as f:
+            content = f.read()
+        plot_convergence(content)
         plt.savefig(save)
     else:
         print("Usage: geometry_convergence_plot <path_to_orca_out> [path_to_save_plot]")
