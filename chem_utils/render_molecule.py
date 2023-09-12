@@ -9,8 +9,10 @@ import pandas as pd
 from pathlib import Path
 import argparse
 
+import pyperclip
+import tkinter as tk
+from tkinter import filedialog
 
-# from .rotate_path import rotate_path
 
 default_atoms_settings = pd.read_csv(
     str(Path(__file__).parent/'pyvista_render_settings.csv'))
@@ -40,9 +42,11 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
     if atom_numbers:
         poly = pv.PolyData(atom_positions)
         poly["My Labels"] = [str(i) for i in range(poly.n_points)]
-        plotter.add_point_labels(poly, "My Labels", point_size=20, font_size=36)
+        plotter.add_point_labels(
+            poly, "My Labels", point_size=20, font_size=36)
 
-    pairs = [(a, b) for idx, a in enumerate(symb) for b in symb[idx + 1:]]+[(i, i) for i in symb] if len(symb) > 1 else [(symb[0], symb[0])]
+    pairs = [(a, b) for idx, a in enumerate(symb) for b in symb[idx + 1:]]+[(i, i)
+                                                                            for i in symb] if len(symb) > 1 else [(symb[0], symb[0])]
     ana = Analysis(atoms)
 
     if show_hydrogens and show_hydrogen_bonds:
@@ -50,7 +54,8 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
         f_coords = atom_positions[np.array(atom_symbols) == 'F']
 
         # Compute the distance matrix
-        distance_matrix = np.linalg.norm(h_coords[:, None, :] - f_coords[None, :, :], axis=-1)
+        distance_matrix = np.linalg.norm(
+            h_coords[:, None, :] - f_coords[None, :, :], axis=-1)
         # Iterate over the pairs within distance threshold
         for h_coord, f_coord in zip(h_coords[distance_matrix < 2.2], f_coords[distance_matrix < 2.2]):
             line = pv.Line(h_coord, f_coord)
@@ -79,13 +84,38 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                                        height=bond_length_adjusted,
                                        radius=0.05,
                                        resolution=10)
-                plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+                plotter.add_mesh(cylinder, color='#D3D3D3',
+                                 smooth_shading=True, opacity=alpha)
 
     if show_numbers:
         poly = pv.PolyData(atom_positions)
-        poly["Atom IDs"] = [str(atom.index) for atom in atoms]  # using atom's index as its ID
-        plotter.add_point_labels(poly, "Atom IDs", point_size=20, font_size=36, render_points_as_spheres=False)
+        poly["Atom IDs"] = [str(atom.index)
+                            for atom in atoms]  # using atom's index as its ID
+        plotter.add_point_labels(
+            poly, "Atom IDs", point_size=20, font_size=36, render_points_as_spheres=False)
 
+    # Hotkey function to print camera position and copy to clipboard
+    def copy_camera_position_to_clipboard():
+        cam_pos = plotter.camera_position
+        cam_pos_str = f"Camera Position: {cam_pos}"
+        print(cam_pos_str)
+
+        # Copy to clipboard
+        pyperclip.copy(cam_pos_str)
+
+    # Hotkey function to save the render view as an image using a "Save As" dialog
+    def save_render_view_with_dialog():
+        root = tk.Tk()
+        root.withdraw()  # Hide the root window
+        file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[
+                                                 ("PNG files", "*.png"), ("All files", "*.*")])
+        if file_path:
+            plotter.screenshot(file_path)
+            print(f"Saved image as '{file_path}'.")
+
+    # Add hotkeys to the plotter
+    plotter.add_key_event("c", copy_camera_position_to_clipboard)
+    plotter.add_key_event("p", save_render_view_with_dialog)
 
 
 def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False, background_color='black', show_hydrogen_bonds=False, show_numbers=False):
@@ -101,14 +131,14 @@ def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_
         return plotter
 
 
-def render_molecule_from_path(path, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0):
+def render_molecule_from_path(path, plotter=None, notebook=False, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0):
     if save is None:
         save = [None for _ in path]
     if plotter is None:
         plotter = [None for _ in path]
     for i, (atoms, s, p) in enumerate(zip(path, save, plotter)):
         if p is None:
-            p = pv.Plotter(notebook=True)
+            p = pv.Plotter(notebook=notebook)
             p.set_background('black')
 
         render_molecule(plotter=p, atoms=atoms,
@@ -120,7 +150,7 @@ def render_molecule_from_path(path, plotter=None, save=None, cpos=None, atoms_se
         #     return p
 
 
-def render_molecule_from_file(filename, save=None, alpha=1.0):
+def render_molecule_from_file(filename, save=None, alpha=1.0, notebook=False):
     path = read(filename, index=':')
     if save is None:
         save = [filename[:-4] + f'_{i}.png' for i in range(len(path))]
@@ -147,6 +177,7 @@ def main():
             inp.append(i)
     print(inp)
     [render_molecule_from_file(str(p), alpha=args.alpha) for p in inp]
+
 
 if __name__ == "__main__":
     main()
