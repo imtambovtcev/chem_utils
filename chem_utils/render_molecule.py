@@ -1,18 +1,18 @@
-import sys
-import pyvista as pv
-import numpy as np
-import ase
-from ase.io import read
-from ase.geometry.analysis import Analysis
-import pandas as pd
+from __future__ import annotations
 
-from pathlib import Path
 import argparse
-
-import pyperclip
+import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog
 
+import numpy as np
+import pandas as pd
+import pyperclip
+import pyvista as pv
+from ase import Atoms
+from ase.geometry.analysis import Analysis
+from ase.io import read
 
 default_atoms_settings = pd.read_csv(
     str(Path(__file__).parent/'pyvista_render_settings.csv'))
@@ -21,9 +21,38 @@ default_atoms_settings['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
 
 
-def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=True):
+def render_molecule(atoms: Atoms, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black'):
+    """
+    Renders a 3D visualization of a molecule using the given settings.
+
+    Args:
+        atoms (Atoms): The ASE atoms object containing the atomic information of the molecule.
+        plotter (pv.Plotter, optional): The PyVista plotter object used for rendering. If not provided, a new one will be created. Defaults to None.
+        atoms_settings (DataFrame, optional): A dataframe containing the visualization settings for each atom type. Defaults to default_atoms_settings.
+        show_hydrogens (bool, optional): Whether to render hydrogen atoms. Defaults to True.
+        alpha (float, optional): The opacity of the rendered atoms and bonds. Value should be between 0 (transparent) and 1 (opaque). Defaults to 1.0.
+        atom_numbers (bool, optional): Whether to display atom numbers. Defaults to False.
+        show_hydrogen_bonds (bool, optional): Whether to visualize hydrogen bonds. Defaults to False.
+        show_numbers (bool, optional): Whether to show atom indices. Defaults to False.
+        show_basis_vectors (bool, optional): Whether to display the basis vectors. Defaults to True.
+        save (str, optional): Filepath to save the rendered image. If provided, the rendered image will be saved to this path. Defaults to None.
+        cpos (list or tuple, optional): Camera position for the PyVista plotter. Defaults to None.
+        notebook (bool, optional): Whether the function is being called within a Jupyter notebook. Adjusts the rendering accordingly. Defaults to False.
+        auto_close (bool, optional): Whether to automatically close the rendering window after saving or completing the rendering. Defaults to True.
+        interactive (bool, optional): Whether to allow interactive visualization (e.g., rotation, zoom). Defaults to False.
+        background_color (str, optional): Color of the background in the render. Defaults to 'black'.
+
+    Returns:
+        pv.Plotter: The PyVista plotter object with the rendered visualization.
+    """
+    
     if atoms_settings is None:
         atoms_settings = default_atoms_settings
+
+    if plotter is None:
+        plotter = pv.Plotter(notebook=notebook)
+
+    plotter.set_background(background_color)
 
     # Get unique symbols from atoms
     symb = list(set(atoms.symbols))
@@ -38,7 +67,7 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
         else:
             print(f"Warning: {symbol} not found in settings. Using default.")
             settings = _atoms_settings.loc['Unknown']
-        
+
         if show_hydrogens or symbol != 'H':
             sphere = pv.Sphere(
                 radius=settings['Radius'], center=position, theta_resolution=12, phi_resolution=12)
@@ -67,7 +96,8 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
                 f_coord = atom_positions[f_index]
                 if np.linalg.norm(h_coord - f_coord) < 2.2:
                     line = pv.Line(h_coord, f_coord)
-                    plotter.add_mesh(line, color='white', opacity=alpha, line_width=2)
+                    plotter.add_mesh(line, color='white',
+                                     opacity=alpha, line_width=2)
 
     # Render bonds
     for bond_type in pairs:
@@ -97,12 +127,14 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
 
     if show_basis_vectors:
         origin = np.array([0, 0, 0])
-        
-        basis_vectors = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+        basis_vectors = [np.array([1, 0, 0]), np.array(
+            [0, 1, 0]), np.array([0, 0, 1])]
         colors = ['red', 'green', 'blue']
 
         for direction, color in zip(basis_vectors, colors):
-            arrow = pv.Arrow(start=origin, direction=direction, shaft_radius=0.05, tip_radius=0.1)
+            arrow = pv.Arrow(start=origin, direction=direction,
+                             shaft_radius=0.05, tip_radius=0.1)
             plotter.add_mesh(arrow, color=color)
 
     # Display atom IDs if required
@@ -131,19 +163,15 @@ def render_molecule(plotter: pv.Plotter, atoms: ase.Atoms, atoms_settings=None, 
     plotter.add_key_event("c", copy_camera_position_to_clipboard)
     plotter.add_key_event("p", save_render_view_with_dialog)
 
-
-
-def render_molecule_from_atoms(atoms, plotter=None, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0, notebook=False, auto_close=True, interactive=False, background_color='black', show_hydrogen_bonds=False, show_numbers=False):
-    if plotter is None:
-        plotter = pv.Plotter(notebook=notebook)
-        plotter.set_background(background_color)
-    render_molecule(plotter=plotter, atoms=atoms,
-                    atoms_settings=atoms_settings, alpha=alpha, show_hydrogen_bonds=show_hydrogen_bonds, show_numbers=show_numbers)
+    # If saving is required, save the screenshot
     if save is not None:
-        plotter.show(screenshot=save, window_size=[
-                     1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
-    else:
-        return plotter
+        plotter.screenshot(save)
+
+    # If showing is required, display the visualization
+    if show:
+        plotter.show(window_size=[1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
+
+    return plotter
 
 
 def render_molecule_from_path(path, plotter=None, notebook=False, save=None, cpos=None, atoms_settings=default_atoms_settings, alpha=1.0):

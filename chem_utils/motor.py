@@ -1,36 +1,33 @@
 from __future__ import annotations
-import numpy as np
-from .render_molecule import render_molecule_from_atoms, render_molecule_from_path
-from ase import Atoms
-from ase.io import read, write
-from ase.geometry.analysis import Analysis
-import networkx as nx
-import networkx.algorithms.isomorphism as iso
-from scipy.spatial.distance import cdist
-from scipy.optimize import minimize
-from .format_xyz import format_xyz_file
-from scipy.spatial.transform import Rotation as R
-import pyvista as pv
-from warnings import warn
-import warnings
-from sklearn.decomposition import PCA
+
 import io
-from itertools import combinations
+import math
+import warnings
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache
-
-from rdkit import Chem
-from rdkit.Chem import rdFMCS
-from rdkit.Chem import Draw
-from rdkit.Chem.rdDepictor import Compute2DCoords
-
-import math
-
-from IPython.display import display, Image
 from io import BytesIO
+from itertools import combinations, islice
+from warnings import warn
 
-from itertools import islice
+import networkx as nx
+import networkx.algorithms.isomorphism as iso
+import numpy as np
+import pyvista as pv
+from ase import Atoms
+from ase.geometry.analysis import Analysis
+from ase.io import read, write
+from IPython.display import Image, display
+from rdkit import Chem
+from rdkit.Chem import Draw, rdFMCS
+from rdkit.Chem.rdDepictor import Compute2DCoords
+from scipy.optimize import minimize
+from scipy.spatial.distance import cdist
+from scipy.spatial.transform import Rotation as R
+from sklearn.decomposition import PCA
+
+from .format_xyz import format_xyz_file
+from .render_molecule import render_molecule
 
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
@@ -63,90 +60,6 @@ def rotation_matrix(axis, theta):
     return np.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
                      [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
                      [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
-
-
-def simple_rotation(v1, v2):
-    # v1 = self.fragment_attach_vector
-    # v2 = vector
-    v1 /= np.linalg.norm(v1)
-    v2 /= np.linalg.norm(v2)
-    # print(f'{v1 = }')
-    # print(f'{v2 = }')
-
-    # Calculate the rotation vector and rotation angle
-    rotation_vector = np.cross(v1, v2)
-    rotation_angle = np.arccos(np.dot(v1, v2))
-    rotation_angle = 0.0 if np.isnan(rotation_angle) else rotation_angle
-    print(f'{rotation_angle = }')
-
-    # Compute the rotation matrix
-    return R.from_rotvec(rotation_angle * rotation_vector)
-
-
-def best_rotation(v1, v2, v3, v4):
-    # Ensure the vectors are numpy arrays and normalized
-    v1 = np.array(v1) / np.linalg.norm(v1)
-    v2 = np.array(v2) / np.linalg.norm(v2)
-    v3 = np.array(v3) / np.linalg.norm(v3)
-    v4 = np.array(v4) / np.linalg.norm(v4)
-
-    # Calculate rotations
-    rot1 = R.from_rotvec(np.cross(v3, v1))
-    rot2 = R.from_rotvec(np.cross(v4, v2))
-
-    # Apply first rotation to v4
-    v4_rot = rot1.apply(v4)
-
-    # Calculate the second rotation from rotated v4 to v2
-    rot3 = R.from_rotvec(np.cross(v4_rot, v2))
-
-    # Combine rotations
-    rot_comb = rot3 * rot1
-
-    # Return combined rotation
-    return rot_comb
-
-
-def best_fit_plane(points):
-    # Вычисляем центроид (среднее всех точек)
-    centroid = np.mean(points, axis=0)
-
-    # Центрируем точки
-    centered_points = points - centroid
-
-    # Вычисляем ковариационную матрицу
-    cov_matrix = np.cov(centered_points.T)
-
-    # Применяем сингулярное разложение
-    _, _, vh = np.linalg.svd(cov_matrix)
-
-    # Нормаль к плоскости - это последний вектор в матрице vh
-    normal = vh[-1]
-
-    return centroid, normal
-
-
-# def bonded_nodes_with_exclude(i,bonds, exclude=[]):
-#     b = [bond[0] if bond[0]!=i else bond[1] for bond in bonds if i in bond]
-#     return [bond for bon in b if bond not in exclude]
-
-
-def first_split_node(i, G):
-    # Check if the starting node 'i' itself is a split
-    if len(list(G.neighbors(i))) > 1:
-        return i, list(G.neighbors(i))
-
-    visited = set()
-    visited.add(i)
-
-    # Use BFS to find the first split or the last node
-    for node in nx.bfs_tree(G, i):
-        visited.add(node)
-        if len(list(G.neighbors(node))) > 2:
-            next_level_nodes = set(G.neighbors(node)) - visited
-            return node, list(next_level_nodes)
-
-    return node, None
 
 
 def fragment_vectors(i, coords):
@@ -238,7 +151,40 @@ class Molecule(Atoms):
                     unique_bonds.append((i, j))
 
         # print(f'{unique_bonds = }')
-        self.G.add_edges_from(unique_bonds)
+        self.G.add_edges_from(unique_bonds, label='single')
+
+    def update_bond_labels(self):
+        # Typical valencies for common elements.
+        # You can extend this dictionary for other elements.
+        typical_valencies = {
+            'H': 1,
+            'C': 4,
+            'N': 3,
+            'O': 2,
+            'F': 1,
+            # Add other elements as needed.
+        }
+
+        # Count the number of bonds for each atom
+        bond_count = {node: len(list(self.G.neighbors(node)))
+                      for node in self.G.nodes()}
+
+        # Update bond types based on typical valency and bond count
+        for i, j in self.G.edges():
+            atom1_symbol = self.get_chemical_symbols()[i]
+            atom2_symbol = self.get_chemical_symbols()[j]
+
+            valency_diff1 = typical_valencies[atom1_symbol] - bond_count[i]
+            valency_diff2 = typical_valencies[atom2_symbol] - bond_count[j]
+
+            if valency_diff1 == 0 and valency_diff2 == 0:
+                self.G[i][j]['label'] = 'single'
+            elif valency_diff1 == 1 and valency_diff2 == 1:
+                self.G[i][j]['label'] = 'double'
+            elif valency_diff1 == 2 and valency_diff2 == 2:
+                self.G[i][j]['label'] = 'triple'
+            else:
+                self.G[i][j]['label'] = 'ambiguous'
 
     @classmethod
     def load(cls, filename):
@@ -251,9 +197,9 @@ class Molecule(Atoms):
         return molecule
 
     def __eq__(self, other: Atoms):
-        '''
+        """
         Molecules are equal if they have the same atoms
-        '''
+        """
         # Check if both are instances of Atoms
         if not isinstance(other, Atoms):
             return False
@@ -301,10 +247,10 @@ class Molecule(Atoms):
         return list(nx.shortest_path(G, bond[0]).keys()), list(nx.shortest_path(G, bond[1]).keys())
 
     def divide_in_two_fragments(self, fragment_attach_atom, fragment_atoms_ids):
-        '''
+        """
         fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
         fragment_atoms_ids - ids of the atoms fragments
-        '''
+        """
         small_fragment_ids = list(set(fragment_atoms_ids))
         # print(f'{small_fragment_ids = }')
         main_fragment_ids = list(
@@ -491,21 +437,20 @@ class Molecule(Atoms):
         return self
         # print(self.get_positions())
 
-    def render(self, show=True, show_numbers=False):
-        p = render_molecule_from_atoms(self, show_numbers=show_numbers)
-        if show:
-            p.show()
-        else:
-            return p
+    def render(self, *args, **kwargs):
+        return render_molecule(self, *args, **kwargs)
 
-    def render_alongside(self, other, alpha=1.0, show=True):
-        p = render_molecule_from_atoms(self)
-        p = render_molecule_from_atoms(other, p, alpha=alpha)
-        # print(p)
-        if show:
-            p.show()
-        else:
-            return p
+    def render_alongside(self, other, other_alpha=1.0, *args, **kwargs):
+        # Store the original value of 'show', defaulting to True if not provided
+        original_show_value = kwargs.get('show', True)
+        # Set 'show' to False for the first render
+        kwargs['show'] = False
+        p = render_molecule(self, *args, **kwargs)
+        # Restore the original value of 'show' for the second render
+        kwargs['show'] = original_show_value
+        # Update 'alpha' value for the second render if not provided
+        kwargs['alpha'] = kwargs.get('alpha', other_alpha)
+        return render_molecule(other, p, *args, **kwargs)
 
     def scheme_2D(self, filename=None):
         """Compute 2D coordinates for the molecule using RDKit and visualize or save it."""
@@ -524,22 +469,24 @@ class Molecule(Atoms):
             display(Image(data=byte_stream.getvalue()))
 
     def get_fragment(self, fragment_attach_atom, fragment_atoms_ids):
-        '''
+        """
         Function to get fragment from a molecule
         fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
         fragment_atoms_ids - ids of the atoms fragments
-        '''
+        """
         _, fragment = self.divide_in_two_fragments(
             fragment_attach_atom, fragment_atoms_ids)
         return fragment
 
-    def rotate(self, zero_atom, x_atom, no_z_atom):
-        '''
+    def rotate(self, zero_atom=None, x_atom=None, no_z_atom=None):
+        """
         rotate molecule by 3 atoms:
         - zero_atom: to be placed to (0,0,0)
         - x_atom: to be placed to (?, 0, 0)
         - no_z_atom: to be placed to (?, ?, 0)
-        '''
+        """
+        if all(variable is None for variable in (zero_atom, x_atom, no_z_atom)):
+            zero_atom, x_atom, no_z_atom = self.find_rotation_atoms()
         positions = self.get_positions()
         positions -= positions[zero_atom, :]
         positions = np.matmul(rotation_matrix(np.cross(positions[x_atom, :], [1, 0, 0]), np.arccos(
@@ -649,14 +596,14 @@ class Fragment(Molecule):
         # Convert the reordered molecule to a Fragment instance and return
         return Fragment(reordered_molecule, attach_atom=new_attach_atom, attach_matrix=self.attach_matrix)
 
-    def _fragment_render(self, vectors=True, show_numbers=False):
-        p = render_molecule_from_atoms(self, show_numbers=show_numbers)
+    def fragment_vectors_render(self, plotter: pv.Plotter = None):
+        if plotter is None:
+            plotter = pv.Plotter()
         V0, V1, V2, V3 = self.fragment_vectors
-        if vectors:
-            add_vector_to_plotter(p, V0, V1, color='red')
-            add_vector_to_plotter(p, V0, V2, color='green')
-            add_vector_to_plotter(p, V0, V3, color='blue')
-        return p
+        add_vector_to_plotter(plotter, V0, V1, color='red')
+        add_vector_to_plotter(plotter, V0, V2, color='green')
+        add_vector_to_plotter(plotter, V0, V3, color='blue')
+        return plotter
 
     def apply_transition(self, r0):
         self.set_positions(self.get_positions() + r0)
@@ -676,20 +623,28 @@ class Fragment(Molecule):
         self.apply_transition(-self.attach_point)
         self.apply_rotation(self.get_origin_rotation_matrix())
 
-    def render(self, show=True, show_numbers=False):
-        p = self._fragment_render(vectors=True, show_numbers=show_numbers)
-        if show:
-            p.show()
+    def render(self, **kwargs):
+        if 'plotter' in kwargs:
+            plotter = self.fragment_vectors_render(kwargs['plotter'])
         else:
-            return p
+            plotter = self.fragment_vectors_render(None)
 
-    def render_alongside(self, other, alpha=1.0, show=True):
-        p = self._fragment_render(vectors=True)
-        p = render_molecule_from_atoms(other, p, alpha=alpha)
-        if show:
-            p.show()
-        else:
-            return p
+        # Update the plotter in kwargs before calling super
+        kwargs['plotter'] = plotter
+        return super().render(**kwargs)
+
+    def render_alongside(self, other, other_alpha=1.0, **kwargs):
+        # Get the plotter from kwargs or default to None
+        plotter = kwargs.get('plotter', None)
+
+        # Process the plotter using fragment_vectors_render
+        plotter = self.fragment_vectors_render(plotter)
+
+        # Update the plotter in kwargs
+        kwargs['plotter'] = plotter
+
+        # Call the super method
+        return super().render_alongside(other, other_alpha=other_alpha, **kwargs)
 
     def to_xyz_string(self):
         # Convert attach matrix to string
@@ -756,13 +711,13 @@ class Motor(Molecule):
         super().__init__(atoms)
 
     def find_bond(self):
-        '''
+        """
         Identify the bond connecting the stator and rotor in a molecule.
         Returns:
         - dict: Information about the bond, stator, and rotor nodes and their neighbors.
         bond[0] -- stator
         bond[1] -- rotor
-        '''
+        """
 
         edges = self.get_bonds_without()
         # Create a directed graph from the provided edges
@@ -1143,9 +1098,10 @@ class Path:
         return cls(read(filename, index=':'))
 
     def rotate(self):
-        assert isinstance(self[0], Motor, )
+        assert isinstance(self[0], Motor)
+        zero_atom, x_atom, no_z_atom = self[0].find_rotation_atoms()
         for motor in self:
-            motor.rotate(*motor.find_rotation_atoms())
+            motor.rotate(zero_atom, x_atom, no_z_atom)
 
     def reorder_atoms_of_intermediate_images(self):
         half_len = len(self) // 2
@@ -1239,7 +1195,7 @@ class Path:
 
     def render(self):
         current_idx = 0
-        p = render_molecule_from_atoms(self[current_idx])
+        p = render_molecule(self[current_idx])
         print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
 
         def key_press(obj, event):
@@ -1255,7 +1211,7 @@ class Path:
                 return
             # Update the rendered molecule based on the current_idx
             p.clear()
-            render_molecule_from_atoms(self[current_idx], p)
+            render_molecule(self[current_idx], p)
             p.reset_camera()
             p.render()
 
@@ -1264,10 +1220,10 @@ class Path:
 
     def render_alongside(self, other, alpha=1.0):
         current_idx = 0
-        p = render_molecule_from_atoms(self[current_idx])
+        p = render_molecule(self[current_idx])
 
         if isinstance(other, Path):
-            render_molecule_from_atoms(other[current_idx], p, alpha=alpha)
+            render_molecule(other[current_idx], p, alpha=alpha)
             print(
                 "Press 'n' to move to the next pair of molecules, 'p' to go back, and 'q' to quit.")
 
@@ -1284,14 +1240,14 @@ class Path:
                     return
                 # Update the rendered molecules based on the current_idx
                 p.clear()
-                render_molecule_from_atoms(self[current_idx], p)
-                render_molecule_from_atoms(other[current_idx], p, alpha=alpha)
+                render_molecule(self[current_idx], p)
+                render_molecule(other[current_idx], p, alpha=alpha)
                 p.reset_camera()
                 p.render()
 
             p.iren.add_observer('KeyPressEvent', key_press)
         elif isinstance(other, ase.Atoms):
-            render_molecule_from_atoms(other, p, alpha=alpha)
+            render_molecule(other, p, alpha=alpha)
         else:
             raise TypeError(
                 f"Expected other to be of type Path or ase.Atoms, got {type(other)}")
