@@ -983,15 +983,16 @@ class Motor(Molecule):
             zero_atom, x_atom, no_z_atom = f_b['bond_rotor_node'], f_b['bond_stator_node'], f_b['C_H_rotor']
         elif settings['mode'] == 'stator':
             f_b = self.get_stator_rotor_bond()
-            zero_atom, x_atom, no_z_atom = f_b['bond_stator_node'], f_b['stator_neighbours'][0], f_b['stator_neighbours'][1]
+            zero_atom, x_atom, no_z_atom = f_b['bond_stator_node'], f_b[
+                'stator_neighbours'][0], f_b['stator_neighbours'][1]
         elif all(key in settings for key in ['zero_atom', 'x_atom', 'no_z_atom']):
             zero_atom, x_atom, no_z_atom = settings['zero_atom'], settings['x_atom'], settings['no_z_atom']
             return zero_atom, x_atom, no_z_atom
         else:
-            raise ValueError("Invalid settings provided for finding rotation atoms.")
-                
-        return zero_atom, x_atom, no_z_atom
+            raise ValueError(
+                "Invalid settings provided for finding rotation atoms.")
 
+        return zero_atom, x_atom, no_z_atom
 
     def reorder(self, mapping: dict):
         """
