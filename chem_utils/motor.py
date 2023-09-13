@@ -1,7 +1,5 @@
 from __future__ import annotations
 import numpy as np
-# from .find_cycles import find_bond
-# from .rotate_path import rotation_matrix
 from .render_molecule import render_molecule_from_atoms, render_molecule_from_path
 from ase import Atoms
 from ase.io import read, write
@@ -11,7 +9,6 @@ import networkx.algorithms.isomorphism as iso
 from scipy.spatial.distance import cdist
 from scipy.optimize import minimize
 from .format_xyz import format_xyz_file
-# from .rotate_path import rotate_path
 from scipy.spatial.transform import Rotation as R
 import pyvista as pv
 from warnings import warn
@@ -247,10 +244,10 @@ class Molecule(Atoms):
     def load(cls, filename):
         # Use ASE's read function to get Atoms object from file
         atoms = read(filename)
-        
+
         # Create a Molecule instance from the Atoms object
         molecule = cls(atoms)
-        
+
         return molecule
 
     def __eq__(self, other: Atoms):
@@ -572,6 +569,7 @@ class Molecule(Atoms):
             )+((i+1)/(n+1))*(atoms.get_positions()-self.get_positions()))
             path.append(new_atmos)
         return path
+
 
 class Fragment(Molecule):
     def __init__(self, *args, attach_atom=None, attach_matrix=None, **kwargs):
@@ -912,13 +910,13 @@ class Motor(Molecule):
             if not split_bond:
                 return []  # Return empty list if split_bond is empty
             split_bond = split_bond[0]
-            a,b = self.divide_in_two(split_bond)
+            a, b = self.divide_in_two(split_bond)
             tail_fragment = b if f_b['C_H_rotor'] in a else a
             # print(f'{a = }')
             # print(f'{f_b["C_H_rotor"] = }')
             assert f_b['C_H_rotor'] not in tail_fragment
             return [node for node in tail_fragment if self.G.nodes[node]['label'] in ['F', 'H']]
-        
+
         else:
             for i in self.G[f_b['C_H_rotor']]:
                 tail_C = i
@@ -981,23 +979,19 @@ class Motor(Molecule):
 
     def find_rotation_atoms(self, settings=None):
         if settings is None or settings['mode'] == 'default':
-            ana = Analysis(self)
-            bonds = self.get_bonds_without()
-            # print(f'{bonds = }')
-            stator_rotor = self.find_bond()
-            zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
-                'stator_neighbours'][0], stator_rotor['stator_neighbours'][1]
-        elif settings['mode'] == 'bond_x':
-            ana = Analysis(self)
-            bonds = self.get_bonds_without()
-            # print(f'{bonds = }')
-            stator_rotor = self.find_bond()
-            zero_atom, x_atom, no_z_atom = stator_rotor['bond_stator_node'], stator_rotor[
-                'bond_rotor_node'], np.min(stator_rotor['rotor_neighbours'])
-        else:
+            f_b = self.get_stator_rotor_bond()
+            zero_atom, x_atom, no_z_atom = f_b['bond_rotor_node'], f_b['bond_stator_node'], f_b['C_H_rotor']
+        elif settings['mode'] == 'stator':
+            f_b = self.get_stator_rotor_bond()
+            zero_atom, x_atom, no_z_atom = f_b['bond_stator_node'], f_b['stator_neighbours'][0], f_b['stator_neighbours'][1]
+        elif all(key in settings for key in ['zero_atom', 'x_atom', 'no_z_atom']):
             zero_atom, x_atom, no_z_atom = settings['zero_atom'], settings['x_atom'], settings['no_z_atom']
-
+            return zero_atom, x_atom, no_z_atom
+        else:
+            raise ValueError("Invalid settings provided for finding rotation atoms.")
+                
         return zero_atom, x_atom, no_z_atom
+
 
     def reorder(self, mapping: dict):
         """
@@ -1062,10 +1056,10 @@ class Path:
         - new_type (type): The desired type to which all images should be converted.
         """
         if not isinstance(new_type, type):
-            raise TypeError(f"Expected 'new_type' to be a type, got {type(new_type)}")
+            raise TypeError(
+                f"Expected 'new_type' to be a type, got {type(new_type)}")
 
         self.images = [new_type(image) for image in self.images]
-
 
     def __getattr__(self, attr):
         """
@@ -1148,7 +1142,7 @@ class Path:
         return cls(read(filename, index=':'))
 
     def rotate(self):
-        assert isinstance(self[0], Motor)
+        assert isinstance(self[0], Motor, )
         for motor in self:
             motor.rotate(*motor.find_rotation_atoms())
 
@@ -1221,6 +1215,9 @@ class Path:
         with open(filename, "w") as text_file:
             text_file.write(self.to_xyz_string())
 
+    def copy(self):
+        return Path([image.copy() for image in self])
+
     def to_allxyz_string(self):
         return ">\n".join([image.to_xyz_string() for image in self])
 
@@ -1270,7 +1267,8 @@ class Path:
 
         if isinstance(other, Path):
             render_molecule_from_atoms(other[current_idx], p, alpha=alpha)
-            print("Press 'n' to move to the next pair of molecules, 'p' to go back, and 'q' to quit.")
+            print(
+                "Press 'n' to move to the next pair of molecules, 'p' to go back, and 'q' to quit.")
 
             def key_press(obj, event):
                 nonlocal current_idx
@@ -1294,7 +1292,7 @@ class Path:
         elif isinstance(other, ase.Atoms):
             render_molecule_from_atoms(other, p, alpha=alpha)
         else:
-            raise TypeError(f"Expected other to be of type Path or ase.Atoms, got {type(other)}")
+            raise TypeError(
+                f"Expected other to be of type Path or ase.Atoms, got {type(other)}")
 
         p.show()
-
