@@ -2,37 +2,47 @@ from __future__ import annotations
 
 import io
 import math
+import tkinter as tk
 import warnings
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
-from functools import lru_cache
 from io import BytesIO
 from itertools import combinations, islice
+from tkinter import filedialog
 from warnings import warn
 
 import networkx as nx
 import networkx.algorithms.isomorphism as iso
 import numpy as np
+import pandas as pd
+import pyperclip
 import pyvista as pv
 from ase import Atoms
 from ase.geometry.analysis import Analysis
 from ase.io import read, write
 from IPython.display import Image, display
 from rdkit import Chem
-from rdkit.Chem import Draw, rdFMCS
+from rdkit.Chem import AllChem, Draw, rdFMCS
 from rdkit.Chem.rdDepictor import Compute2DCoords
-from rdkit import Chem
-from rdkit.Chem import AllChem
 from scipy.optimize import minimize
 from scipy.spatial.distance import cdist
 from scipy.spatial.transform import Rotation as R
 from sklearn.decomposition import PCA
 
-from .format_xyz import format_xyz_file
-from .render_molecule import render_molecule
+from .valency import add_valency, general_print, rebond
 
-from .valency import rebond, general_print, add_valency
+from pathlib import Path
 
+default_atoms_settings = pd.read_csv(
+    str(Path(__file__).parent/'pyvista_render_settings.csv'))
+default_atoms_settings.index = list(default_atoms_settings['Name'])
+default_atoms_settings['Color'] = [[int(i) for i in s.replace(
+    '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
+
+def get_orthogonal_vector(v):
+    basis_vectors = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    smallest = np.argmin(np.abs(v))
+    orthogonal = np.cross(v, basis_vectors[smallest])
+    return orthogonal / np.linalg.norm(orthogonal)
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
     # Create a single point from the origin
@@ -156,6 +166,9 @@ class Molecule(Atoms):
 
         # print(f'{unique_bonds = }')
         self.G.add_edges_from(unique_bonds)
+    
+    def bond_print(self):
+        return general_print(self.G)
 
     def add_valency(self):
         self.G= add_valency(self.G)
@@ -437,20 +450,234 @@ class Molecule(Atoms):
         return self
         # print(self.get_positions())
 
-    def render(self, *args, **kwargs):
-        return render_molecule(self, *args, **kwargs)
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=True, resolution = 20):
+        """
+        Renders a 3D visualization of a molecule using the given settings.
+
+        Args:
+            plotter (pv.Plotter, optional): The PyVista plotter object used for rendering. If not provided, a new one will be created. Defaults to None.
+            atoms_settings (DataFrame, optional): A dataframe containing the visualization settings for each atom type. Defaults to default_atoms_settings.
+            show_hydrogens (bool, optional): Whether to render hydrogen atoms. Defaults to True.
+            alpha (float, optional): The opacity of the rendered atoms and bonds. Value should be between 0 (transparent) and 1 (opaque). Defaults to 1.0.
+            atom_numbers (bool, optional): Whether to display atom numbers. Defaults to False.
+            show_hydrogen_bonds (bool, optional): Whether to visualize hydrogen bonds. Defaults to False.
+            show_numbers (bool, optional): Whether to show atom indices. Defaults to False.
+            show_basis_vectors (bool, optional): Whether to display the basis vectors. Defaults to True.
+            save (str, optional): Filepath to save the rendered image. If provided, the rendered image will be saved to this path. Defaults to None.
+            cpos (list or tuple, optional): Camera position for the PyVista plotter. Defaults to None.
+            notebook (bool, optional): Whether the function is being called within a Jupyter notebook. Adjusts the rendering accordingly. Defaults to False.
+            auto_close (bool, optional): Whether to automatically close the rendering window after saving or completing the rendering. Defaults to True.
+            interactive (bool, optional): Whether to allow interactive visualization (e.g., rotation, zoom). Defaults to False.
+            background_color (str, optional): Color of the background in the render. Defaults to 'black'.
+
+        Returns:
+            pv.Plotter: The PyVista plotter object with the rendered visualization.
+        """
+        
+        if atoms_settings is None:
+            atoms_settings = default_atoms_settings
+
+        if plotter is None:
+            plotter = pv.Plotter(notebook=notebook)
+
+        plotter.set_background(background_color)
+
+        # Get unique symbols from atoms
+        symb = list(set(self.symbols))
+        _atoms_settings = atoms_settings.loc[symb]
+
+        for position, symbol in zip(self.positions, self.get_chemical_symbols()):
+            # Ensure symbol is in the DataFrame's index
+            if symbol in _atoms_settings.index:
+                settings = _atoms_settings.loc[symbol]
+            else:
+                print(f"Warning: {symbol} not found in settings. Using default.")
+                settings = _atoms_settings.loc['Unknown']
+
+            if show_hydrogens or symbol != 'H':
+                sphere = pv.Sphere(
+                    radius=settings['Radius'], center=position, theta_resolution=resolution, phi_resolution=resolution)
+                plotter.add_mesh(
+                    sphere, color=settings['Color'], smooth_shading=True, opacity=alpha)
+
+        # Display atom numbers if required
+        if atom_numbers:
+            poly = pv.PolyData(self.positions)
+            poly["My Labels"] = [str(i) for i in range(poly.n_points)]
+            plotter.add_point_labels(
+                poly, "My Labels", point_size=20, font_size=36)
+
+        # Display hydrogen bonds if required
+        if show_hydrogens and show_hydrogen_bonds:
+            h_indices = np.where(np.array(self.get_chemical_symbols()) == 'H')[0]
+            f_indices = np.where(np.array(self.get_chemical_symbols()) == 'F')[0]
+            for h_index in h_indices:
+                h_coord = self.positions[h_index]
+                for f_index in f_indices:
+                    f_coord = self.positions[f_index]
+                    if np.linalg.norm(h_coord - f_coord) < 2.2:
+                        line = pv.Line(h_coord, f_coord)
+                        plotter.add_mesh(line, color='white',
+                                        opacity=alpha, line_width=2)
+
+        # Render bonds
+        bonds = self.get_all_bonds()
+        for bond in bonds:
+            if not show_hydrogens and 'H' in self.G.nodes[bond].get('label', ''):
+                continue
+            atom_a = self.positions[bond[0]]
+            atom_b = self.positions[bond[1]]
+            atom_a_radius = _atoms_settings.loc[self.get_chemical_symbols()[bond[0]]]['Radius']
+            atom_b_radius = _atoms_settings.loc[self.get_chemical_symbols()[bond[1]]]['Radius']
+
+            bond_vector = atom_b - atom_a
+            bond_length = np.linalg.norm(bond_vector)
+            unit_vector = bond_vector / bond_length
+
+            # atom_a_adjusted = atom_a + unit_vector * atom_a_radius
+            # atom_b_adjusted = atom_b - unit_vector * atom_b_radius
+            # bond_length_adjusted = bond_length - atom_a_radius - atom_b_radius
+            bond_type = self.G[bond[0]][bond[1]].get('bond_type', 0)
+
+            bond_type = 1 if not valency else bond_type
+
+            orthogonal = get_orthogonal_vector(bond_vector)
+            print(f'{bond_vector = }')
+
+            match bond_type:
+                case 1:
+                    cylinder_radius = 0.05  # Adjust this for single bond
+                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+
+                    atom_a_adjusted = atom_a + unit_vector * adjusted_atom_a_radius
+                    atom_b_adjusted = atom_b - unit_vector * adjusted_atom_b_radius
+                    bond_length_adjusted = bond_length - adjusted_atom_a_radius - adjusted_atom_b_radius
+
+                    cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted),
+                                        direction=bond_vector,
+                                        height=bond_length_adjusted,
+                                        radius=cylinder_radius,
+                                        resolution=resolution)
+                    plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+                
+                case 2:
+                    cylinder_radius = 0.035  # Adjust this for double bond
+                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+
+                    offset_distance = 0.028 
+                    additional_length = np.sqrt(offset_distance**2 + adjusted_atom_a_radius**2) - adjusted_atom_a_radius
+
+                    atom_a_adjusted = atom_a + unit_vector * (adjusted_atom_a_radius + additional_length)
+                    atom_b_adjusted = atom_b - unit_vector * (adjusted_atom_b_radius + additional_length)
+                    bond_length_adjusted = bond_length + 2 * additional_length  # Adjusted length for both sides of the bond
+                                
+                    for i in [-1, 1]:
+                        offset = i * offset_distance * np.array(orthogonal)
+                        cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted) + offset,
+                                            direction=bond_vector,
+                                            height=bond_length_adjusted,
+                                            radius=cylinder_radius,
+                                            resolution=resolution)
+                        plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+                case 3:
+                    cylinder_radius = 0.03  # Adjust this for triple bond
+                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+
+                    offset_distance = 0.07
+                    additional_length = np.sqrt(offset_distance**2 + adjusted_atom_a_radius**2) - adjusted_atom_a_radius
+
+                    atom_a_adjusted = atom_a + unit_vector * (adjusted_atom_a_radius + additional_length)
+                    atom_b_adjusted = atom_b - unit_vector * (adjusted_atom_b_radius + additional_length)
+                    bond_length_adjusted = bond_length + 2 * additional_length  # Adjusted length for both sides of the bond
+
+                    for i in [-1, 0, 1]:  # Including the 0 for the centered cylinder
+                        offset = i * offset_distance * np.array(orthogonal)
+                        cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted) + offset,
+                                            direction=bond_vector,
+                                            height=bond_length_adjusted,
+                                            radius=cylinder_radius,
+                                            resolution=resolution)
+                        plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+
+                
+                case _:
+                    cylinder_radius = 0.05  # Adjust this for error case
+                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+
+                    atom_a_adjusted = atom_a + unit_vector * adjusted_atom_a_radius
+                    atom_b_adjusted = atom_b - unit_vector * adjusted_atom_b_radius
+                    bond_length_adjusted = bond_length - adjusted_atom_a_radius - adjusted_atom_b_radius
+                    
+                    cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted),
+                                        direction=bond_vector,
+                                        height=bond_length_adjusted,
+                                        radius=cylinder_radius,
+                                        resolution=resolution)
+                    plotter.add_mesh(cylinder, color='#FF0000', smooth_shading=True, opacity=alpha)
+
+        if show_basis_vectors:
+            origin = np.array([0, 0, 0])
+
+            basis_vectors = [np.array([1, 0, 0]), np.array(
+                [0, 1, 0]), np.array([0, 0, 1])]
+            colors = ['red', 'green', 'blue']
+
+            for direction, color in zip(basis_vectors, colors):
+                arrow = pv.Arrow(start=origin, direction=direction,
+                                shaft_radius=0.05, tip_radius=0.1)
+                plotter.add_mesh(arrow, color=color)
+
+        # Display atom IDs if required
+        if show_numbers:
+            poly = pv.PolyData(self.positions)
+            poly["Atom IDs"] = [str(atom.index) for atom in self]
+            plotter.add_point_labels(
+                poly, "Atom IDs", point_size=20, font_size=36, render_points_as_spheres=False)
+
+        # Hotkey functions
+        def copy_camera_position_to_clipboard():
+            cam_pos = plotter.camera_position
+            cam_pos_str = f"Camera Position: {cam_pos}"
+            print(cam_pos_str)
+            pyperclip.copy(cam_pos_str)
+
+        def save_render_view_with_dialog():
+            root = tk.Tk()
+            root.withdraw()
+            file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[
+                                                    ("PNG files", "*.png"), ("All files", "*.*")])
+            if file_path:
+                plotter.screenshot(file_path)
+                print(f"Saved image as '{file_path}'.")
+
+        plotter.add_key_event("c", copy_camera_position_to_clipboard)
+        plotter.add_key_event("p", save_render_view_with_dialog)
+
+        # If saving is required, save the screenshot
+        if save is not None:
+            plotter.screenshot(save)
+
+        # If showing is required, display the visualization
+        if show:
+            plotter.show(window_size=[1000, 1000], cpos=cpos, auto_close=auto_close, interactive=interactive)
+
+        return plotter
 
     def render_alongside(self, other, other_alpha=1.0, *args, **kwargs):
         # Store the original value of 'show', defaulting to True if not provided
         original_show_value = kwargs.get('show', True)
         # Set 'show' to False for the first render
         kwargs['show'] = False
-        p = render_molecule(self, *args, **kwargs)
+        p = self.render( *args, **kwargs)
         # Restore the original value of 'show' for the second render
         kwargs['show'] = original_show_value
         # Update 'alpha' value for the second render if not provided
         kwargs['alpha'] = kwargs.get('alpha', other_alpha)
-        return render_molecule(other, p, *args, **kwargs)
+        return other.render(p, *args, **kwargs)
 
     def scheme_2D(self, filename=None):
         """Compute 2D coordinates for the molecule using RDKit and visualize or save it."""
@@ -1195,7 +1422,7 @@ class Path:
 
     def render(self):
         current_idx = 0
-        p = render_molecule(self[current_idx])
+        p = self[current_idx].render()
         print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
 
         def key_press(obj, event):
@@ -1211,7 +1438,7 @@ class Path:
                 return
             # Update the rendered molecule based on the current_idx
             p.clear()
-            render_molecule(self[current_idx], p)
+            self[current_idx].render(p)
             p.reset_camera()
             p.render()
 
@@ -1220,10 +1447,10 @@ class Path:
 
     def render_alongside(self, other, alpha=1.0):
         current_idx = 0
-        p = render_molecule(self[current_idx])
+        p = self[current_idx].render()
 
         if isinstance(other, Path):
-            render_molecule(other[current_idx], p, alpha=alpha)
+            other[current_idx].render(p, alpha=alpha)
             print(
                 "Press 'n' to move to the next pair of molecules, 'p' to go back, and 'q' to quit.")
 
@@ -1240,14 +1467,14 @@ class Path:
                     return
                 # Update the rendered molecules based on the current_idx
                 p.clear()
-                render_molecule(self[current_idx], p)
-                render_molecule(other[current_idx], p, alpha=alpha)
+                self[current_idx].render(p)
+                other[current_idx].render(p, alpha=alpha)
                 p.reset_camera()
                 p.render()
 
             p.iren.add_observer('KeyPressEvent', key_press)
         elif isinstance(other, Atoms):
-            render_molecule(other, p, alpha=alpha)
+            other.render(p, alpha=alpha)
         else:
             raise TypeError(
                 f"Expected other to be of type Path or ase.Atoms, got {type(other)}")
