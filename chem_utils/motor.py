@@ -21,6 +21,8 @@ from IPython.display import Image, display
 from rdkit import Chem
 from rdkit.Chem import Draw, rdFMCS
 from rdkit.Chem.rdDepictor import Compute2DCoords
+from rdkit import Chem
+from rdkit.Chem import AllChem
 from scipy.optimize import minimize
 from scipy.spatial.distance import cdist
 from scipy.spatial.transform import Rotation as R
@@ -28,6 +30,8 @@ from sklearn.decomposition import PCA
 
 from .format_xyz import format_xyz_file
 from .render_molecule import render_molecule
+
+from .valency import rebond, general_print, add_valency
 
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
@@ -151,40 +155,28 @@ class Molecule(Atoms):
                     unique_bonds.append((i, j))
 
         # print(f'{unique_bonds = }')
-        self.G.add_edges_from(unique_bonds, label='single')
+        self.G.add_edges_from(unique_bonds)
+
+    def add_valency(self):
+        self.G= add_valency(self.G)
+
+    def bond_assertion(self):
+        for node, data in self.G.nodes(data=True):
+            atom_symbol = data['label']
+            atom_valency = data['valency']
+
+            # Count the number of bonds/edges connected to the node
+            bond_count = self.G.degree(node)
+            assert bond_count <= atom_valency, f"Atom {node} ({atom_symbol}) has {bond_count} bonds, which exceeds its known valency of {atom_valency}!"
 
     def update_bond_labels(self):
-        # Typical valencies for common elements.
-        # You can extend this dictionary for other elements.
-        typical_valencies = {
-            'H': 1,
-            'C': 4,
-            'N': 3,
-            'O': 2,
-            'F': 1,
-            # Add other elements as needed.
-        }
-
-        # Count the number of bonds for each atom
-        bond_count = {node: len(list(self.G.neighbors(node)))
-                      for node in self.G.nodes()}
-
-        # Update bond types based on typical valency and bond count
-        for i, j in self.G.edges():
-            atom1_symbol = self.get_chemical_symbols()[i]
-            atom2_symbol = self.get_chemical_symbols()[j]
-
-            valency_diff1 = typical_valencies[atom1_symbol] - bond_count[i]
-            valency_diff2 = typical_valencies[atom2_symbol] - bond_count[j]
-
-            if valency_diff1 == 0 and valency_diff2 == 0:
-                self.G[i][j]['label'] = 'single'
-            elif valency_diff1 == 1 and valency_diff2 == 1:
-                self.G[i][j]['label'] = 'double'
-            elif valency_diff1 == 2 and valency_diff2 == 2:
-                self.G[i][j]['label'] = 'triple'
-            else:
-                self.G[i][j]['label'] = 'ambiguous'
+        self.add_valency()
+        self.bond_assertion()
+        H = rebond(self.G)
+        for i in H.nodes():
+            if H.nodes[i]['valency'] == 0:
+                for j in H.neighbors(i):
+                    self.G.edges[i, j]['bond_type'] = H.edges[i,j]['bond_type']
 
     @classmethod
     def load(cls, filename):
@@ -326,8 +318,16 @@ class Molecule(Atoms):
 
         # Add bonds to the molecule based on self.G
         for (i, j) in self.get_all_bonds():
-            # Assuming single bonds; adjust if necessary
-            mol.AddBond(int(i), int(j), Chem.BondType.SINGLE)
+            label= self.G.edges[i,j].get('bond_type',0)
+            if label == 1:
+                bond_type = Chem.BondType.SINGLE
+            elif label == 2:
+                bond_type = Chem.BondType.DOUBLE
+            elif label == 3:
+                bond_type = Chem.BondType.TRIPLE
+            else:
+                bond_type = Chem.BondType.SINGLE  # default to single if 0 or not specified
+            mol.AddBond(int(i), int(j), bond_type)
 
         # Convert editable molecule to a regular Mol object and return
         return mol.GetMol()
@@ -1246,7 +1246,7 @@ class Path:
                 p.render()
 
             p.iren.add_observer('KeyPressEvent', key_press)
-        elif isinstance(other, ase.Atoms):
+        elif isinstance(other, Atoms):
             render_molecule(other, p, alpha=alpha)
         else:
             raise TypeError(
