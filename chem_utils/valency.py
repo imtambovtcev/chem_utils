@@ -169,7 +169,7 @@ def rebond(G, random_attempts_n=100):
         H, changes_made = adjust_labels_in_H(H)
 
         if not(changes_made):
-            print('random iteration')
+            # print('random iteration')
             if random_copy is None:
                 random_copy = H.copy()
             try:
