@@ -453,7 +453,7 @@ class Molecule(Atoms):
         return self
         # print(self.get_positions())
 
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=True, resolution=20):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=True, resolution=20,  light_settings=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
@@ -483,11 +483,25 @@ class Molecule(Atoms):
         if plotter is None:
             if save:
                 plotter = pv.Plotter(notebook=False, off_screen=True,
-                                     line_smoothing=True, polygon_smoothing=True, image_scale=2)
+                                    line_smoothing=True, polygon_smoothing=True, image_scale=2)
             else:
                 plotter = pv.Plotter(notebook=notebook)
 
         plotter.set_background(background_color)
+
+        if light_settings:
+            plotter.enable_lightkit()
+
+            # Extract the settings from the provided dictionary and update the lights
+            for light in plotter.renderer.lights:
+                if 'light_position' in light_settings:
+                    light.position = light_settings['light_position']
+                if 'light_color' in light_settings:
+                    light.color = light_settings['light_color']
+                if 'light_intensity' in light_settings:
+                    light.intensity = light_settings['light_intensity']
+                if 'light_type' in light_settings:
+                    light.light_type = light_settings['light_type']
 
         # Get unique symbols from atoms
         symb = list(set(self.symbols))
