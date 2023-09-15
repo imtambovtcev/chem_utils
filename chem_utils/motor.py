@@ -7,6 +7,7 @@ import warnings
 from collections import Counter
 from io import BytesIO
 from itertools import combinations, islice
+from pathlib import Path
 from tkinter import filedialog
 from warnings import warn
 
@@ -21,7 +22,8 @@ from ase.geometry.analysis import Analysis
 from ase.io import read, write
 from IPython.display import Image, display
 from rdkit import Chem
-from rdkit.Chem import AllChem, Draw, rdFMCS
+from rdkit.Chem import (AddHs, AllChem, CanonicalRankAtoms, Draw, GetSSSR,
+                        SanitizeMol, rdFMCS)
 from rdkit.Chem.rdDepictor import Compute2DCoords
 from scipy.optimize import minimize
 from scipy.spatial.distance import cdist
@@ -29,8 +31,6 @@ from scipy.spatial.transform import Rotation as R
 from sklearn.decomposition import PCA
 
 from .valency import add_valency, general_print, rebond
-
-from pathlib import Path
 
 default_atoms_settings = pd.read_csv(
     str(Path(__file__).parent/'pyvista_render_settings.csv'))
@@ -426,6 +426,35 @@ class Molecule(Atoms):
         # Return the new reordered molecule
         return Molecule(symbols=reordered_symbols, positions=reordered_coords)
 
+    def get_standard_order(self):
+        """Returns a reordered copy of the molecule based on RDKit's standard order."""
+        mol = self.to_rdkit_mol()
+
+        # Sanitize the molecule to calculate implicit valence and other properties
+        SanitizeMol(mol)
+
+        # Note down the number of atoms in the original molecule
+        num_atoms_original = mol.GetNumAtoms()
+
+        # Add implicit hydrogens
+        mol = AddHs(mol)
+
+        # Calculate SSSR
+        GetSSSR(mol)
+
+        # Get the canonical atom order from RDKit
+        canonical_order = CanonicalRankAtoms(mol)
+
+        # Filter canonical_order to match the size of the original molecule
+        canonical_order = [
+            index for index in canonical_order if index < num_atoms_original]
+
+        mapping = dict(enumerate(canonical_order))
+
+        # Use the reorder method to reorder atoms based on the canonical order
+        reordered_molecule = self.reorder(mapping)
+        return reordered_molecule
+
     def get_bonds_without(self, elements=['H', 'F']):
         # Get nodes that correspond to the undesired elements
         undesired_nodes = [node for node, attrs in self.G.nodes(
@@ -439,21 +468,16 @@ class Molecule(Atoms):
         return list(subgraph.edges())
 
     def rotate_part(self, atom, bond, angle):
-        # print(self.get_positions())
         edge = bond if bond[0] == atom else bond[::-1]
-        print(edge)
-        r0 = self.get_positions(atom)
-        v = self.get_positions(edge[1])-r0
+        r0 = self.get_positions()[atom]
+        v = self.get_positions()[edge[1]]-r0
         island = self.divide_in_two(edge)[0]
-        # print(island)
         r = rotation_matrix(v, np.pi*angle/180)
-        new_coords = np.matmul(r, (self.get_positions(island)-r0).T).T+r0
+        new_coords = np.matmul(r, (self.get_positions()[island]-r0).T).T+r0
         self.set_positions(new_coords, island)
-
         return self
-        # print(self.get_positions())
 
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=True, resolution=20,  light_settings=None):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
