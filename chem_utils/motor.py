@@ -38,11 +38,13 @@ default_atoms_settings.index = list(default_atoms_settings['Name'])
 default_atoms_settings['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
 
+
 def adjust_bond_length(atom_radius, offset_distance, cylinder_radius):
     # Calculate additional length for atom
     x = abs(offset_distance) + cylinder_radius
     L = atom_radius-np.sqrt(atom_radius**2 - x**2)
     return L
+
 
 def add_vector_to_plotter(p, r0, v, color='blue'):
     # Create a single point from the origin
@@ -464,7 +466,7 @@ class Molecule(Atoms):
             show_hydrogen_bonds (bool, optional): Whether to visualize hydrogen bonds. Defaults to False.
             show_numbers (bool, optional): Whether to show atom indices. Defaults to False.
             show_basis_vectors (bool, optional): Whether to display the basis vectors. Defaults to True.
-            save (str, optional): Filepath to save the rendered image. If provided, the rendered image will be saved to this path. Defaults to None.
+            save (str or bool, optional): Filepath to save the rendered image. If provided, the rendered image will be saved to this path, if bool True and no plotter provided, will create a plotter for screenshot. Defaults to None.
             cpos (list or tuple, optional): Camera position for the PyVista plotter. Defaults to None.
             notebook (bool, optional): Whether the function is being called within a Jupyter notebook. Adjusts the rendering accordingly. Defaults to False.
             auto_close (bool, optional): Whether to automatically close the rendering window after saving or completing the rendering. Defaults to True.
@@ -479,7 +481,11 @@ class Molecule(Atoms):
             atoms_settings = default_atoms_settings
 
         if plotter is None:
-            plotter = pv.Plotter(notebook=notebook)
+            if save:
+                plotter = pv.Plotter(notebook=False, off_screen=True,
+                                     line_smoothing=True, polygon_smoothing=True, image_scale=2)
+            else:
+                plotter = pv.Plotter(notebook=notebook)
 
         plotter.set_background(background_color)
 
@@ -535,7 +541,7 @@ class Molecule(Atoms):
                 bond[0]]]['Radius']
             atom_b_radius = _atoms_settings.loc[self.get_chemical_symbols()[
                 bond[1]]]['Radius']
-            
+
             bond_type = self.G[bond[0]][bond[1]].get('bond_type', 0)
             bond_type = 1 if not valency else bond_type
 
@@ -549,7 +555,8 @@ class Molecule(Atoms):
                 focal_point = np.array(cpos[1])
                 view_direction = focal_point - camera_position
                 orthogonal = np.cross(bond_vector, view_direction)
-                orthogonal = orthogonal / np.linalg.norm(orthogonal)  # Normalize to make it unit vector
+                # Normalize to make it unit vector
+                orthogonal = orthogonal / np.linalg.norm(orthogonal)
             else:
                 basis_vectors = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
                 smallest = np.argmin(np.abs(bond_vector))
@@ -560,72 +567,86 @@ class Molecule(Atoms):
                 case 1:
                     # Single bond
                     cylinder_radius = 0.05
-                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
-                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+                    adjusted_atom_a_radius = np.sqrt(
+                        atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(
+                        atom_b_radius**2 - cylinder_radius**2)
                     atom_a_adjusted = atom_a + unit_vector * adjusted_atom_a_radius
                     atom_b_adjusted = atom_b - unit_vector * adjusted_atom_b_radius
-                    bond_length_adjusted = bond_length - adjusted_atom_a_radius - adjusted_atom_b_radius
+                    bond_length_adjusted = bond_length - \
+                        adjusted_atom_a_radius - adjusted_atom_b_radius
                     cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted),
-                                        direction=bond_vector,
-                                        height=bond_length_adjusted,
-                                        radius=cylinder_radius,
-                                        resolution=resolution, capping=False)
-                    plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+                                           direction=bond_vector,
+                                           height=bond_length_adjusted,
+                                           radius=cylinder_radius,
+                                           resolution=resolution, capping=False)
+                    plotter.add_mesh(cylinder, color='#D3D3D3',
+                                     smooth_shading=True, opacity=alpha)
 
                 case 2:
                     # Double bond
                     cylinder_radius = 0.025
                     offset_distance = 0.03
                     for i in [-1, 1]:
-                        offset_vector = i * offset_distance * np.array(orthogonal)
+                        offset_vector = i * offset_distance * \
+                            np.array(orthogonal)
                         offset_magnitude = np.linalg.norm(offset_vector)
-                        L_a = adjust_bond_length(atom_a_radius, offset_magnitude, cylinder_radius)
-                        L_b = adjust_bond_length(atom_b_radius, offset_magnitude, cylinder_radius)
+                        L_a = adjust_bond_length(
+                            atom_a_radius, offset_magnitude, cylinder_radius)
+                        L_b = adjust_bond_length(
+                            atom_b_radius, offset_magnitude, cylinder_radius)
                         atom_a_adjusted = atom_a + unit_vector * L_a
                         atom_b_adjusted = atom_b - unit_vector * L_b
                         bond_length_adjusted = bond_length + L_a + L_b-atom_a_radius-atom_b_radius
                         cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted) + offset_vector,
-                                            direction=bond_vector,
-                                            height=bond_length_adjusted,
-                                            radius=cylinder_radius,
-                                            resolution=resolution, capping=False)
-                        plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
+                                               direction=bond_vector,
+                                               height=bond_length_adjusted,
+                                               radius=cylinder_radius,
+                                               resolution=resolution, capping=False)
+                        plotter.add_mesh(
+                            cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
 
                 case 3:
                     # Triple bond
                     cylinder_radius = 0.02
                     offset_distance = 0.05
                     for i in [-1, 0, 1]:
-                        offset_vector = i * offset_distance * np.array(orthogonal)
+                        offset_vector = i * offset_distance * \
+                            np.array(orthogonal)
                         offset_magnitude = np.linalg.norm(offset_vector)
-                        L_a = adjust_bond_length(atom_a_radius, offset_magnitude, cylinder_radius)
-                        L_b = adjust_bond_length(atom_b_radius, offset_magnitude, cylinder_radius)
+                        L_a = adjust_bond_length(
+                            atom_a_radius, offset_magnitude, cylinder_radius)
+                        L_b = adjust_bond_length(
+                            atom_b_radius, offset_magnitude, cylinder_radius)
                         atom_a_adjusted = atom_a + unit_vector * L_a
                         atom_b_adjusted = atom_b - unit_vector * L_b
                         bond_length_adjusted = bond_length + L_a + L_b-atom_a_radius-atom_b_radius
                         cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted) + offset_vector,
-                                            direction=bond_vector,
-                                            height=bond_length_adjusted,
-                                            radius=cylinder_radius,
-                                            resolution=resolution, capping=False)
-                        plotter.add_mesh(cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
-
+                                               direction=bond_vector,
+                                               height=bond_length_adjusted,
+                                               radius=cylinder_radius,
+                                               resolution=resolution, capping=False)
+                        plotter.add_mesh(
+                            cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
 
                 case _:
                     # Error case
                     cylinder_radius = 0.05
-                    adjusted_atom_a_radius = np.sqrt(atom_a_radius**2 - cylinder_radius**2)
-                    adjusted_atom_b_radius = np.sqrt(atom_b_radius**2 - cylinder_radius**2)
+                    adjusted_atom_a_radius = np.sqrt(
+                        atom_a_radius**2 - cylinder_radius**2)
+                    adjusted_atom_b_radius = np.sqrt(
+                        atom_b_radius**2 - cylinder_radius**2)
                     atom_a_adjusted = atom_a + unit_vector * adjusted_atom_a_radius
                     atom_b_adjusted = atom_b - unit_vector * adjusted_atom_b_radius
-                    bond_length_adjusted = bond_length - adjusted_atom_a_radius - adjusted_atom_b_radius
+                    bond_length_adjusted = bond_length - \
+                        adjusted_atom_a_radius - adjusted_atom_b_radius
                     cylinder = pv.Cylinder(center=0.5*(atom_a_adjusted + atom_b_adjusted),
-                                        direction=bond_vector,
-                                        height=bond_length_adjusted,
-                                        radius=cylinder_radius,
-                                        resolution=resolution, capping=False)
-                    plotter.add_mesh(cylinder, color='#FF0000', smooth_shading=True, opacity=alpha)
-
+                                           direction=bond_vector,
+                                           height=bond_length_adjusted,
+                                           radius=cylinder_radius,
+                                           resolution=resolution, capping=False)
+                    plotter.add_mesh(cylinder, color='#FF0000',
+                                     smooth_shading=True, opacity=alpha)
 
         if show_basis_vectors:
             origin = np.array([0, 0, 0])
@@ -662,12 +683,14 @@ class Molecule(Atoms):
                 plotter.screenshot(file_path)
                 print(f"Saved image as '{file_path}'.")
 
+        # If saving is required, save the screenshot
+        if isinstance(save, str):
+            plotter.show(window_size=[1000, 1000], cpos=cpos)
+            plotter.screenshot(save)
+            return None
+
         plotter.add_key_event("c", copy_camera_position_to_clipboard)
         plotter.add_key_event("p", save_render_view_with_dialog)
-
-        # If saving is required, save the screenshot
-        if save is not None:
-            plotter.screenshot(save)
 
         # If showing is required, display the visualization
         if show:
@@ -679,11 +702,14 @@ class Molecule(Atoms):
     def render_alongside(self, other, other_alpha=1.0, *args, **kwargs):
         # Store the original value of 'show', defaulting to True if not provided
         original_show_value = kwargs.get('show', True)
+        original_save_value = kwargs.get('save', False)
         # Set 'show' to False for the first render
         kwargs['show'] = False
+        kwargs['save'] = bool(original_save_value) # if was string, will make argumet to True, to go to screeenshot mode
         p = self.render(*args, **kwargs)
         # Restore the original value of 'show' for the second render
         kwargs['show'] = original_show_value
+        kwargs['save'] = original_save_value
         # Update 'alpha' value for the second render if not provided
         kwargs['alpha'] = kwargs.get('alpha', other_alpha)
         return other.render(p, *args, **kwargs)
