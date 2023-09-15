@@ -483,7 +483,7 @@ class Molecule(Atoms):
         if plotter is None:
             if save:
                 plotter = pv.Plotter(notebook=False, off_screen=True,
-                                    line_smoothing=True, polygon_smoothing=True, image_scale=2)
+                                     line_smoothing=True, polygon_smoothing=True, image_scale=5)
             else:
                 plotter = pv.Plotter(notebook=notebook)
 
@@ -719,7 +719,8 @@ class Molecule(Atoms):
         original_save_value = kwargs.get('save', False)
         # Set 'show' to False for the first render
         kwargs['show'] = False
-        kwargs['save'] = bool(original_save_value) # if was string, will make argumet to True, to go to screeenshot mode
+        # if was string, will make argumet to True, to go to screeenshot mode
+        kwargs['save'] = bool(original_save_value)
         p = self.render(*args, **kwargs)
         # Restore the original value of 'show' for the second render
         kwargs['show'] = original_show_value
