@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from .motor import Path
 
+
 def render_molecule_from_file(filename, save=None, alpha=1.0):
     path = Path.load(filename)
     path.render(save=save, alpha=alpha)
