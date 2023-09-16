@@ -169,6 +169,12 @@ class Molecule(Atoms):
         # print(f'{unique_bonds = }')
         self.G.add_edges_from(unique_bonds)
 
+    def __delitem__(self, i):
+        # Call the original __delitem__ method from the Atoms class to handle removal
+        super().__delitem__(i)
+        # Reinitialize to reflect the changes
+        self.reinit()
+
     def bond_print(self):
         return general_print(self.G)
 
@@ -928,7 +934,7 @@ class Fragment(Molecule):
         if 'plotter' in kwargs:
             plotter = self.fragment_vectors_render(kwargs['plotter'])
         else:
-            notebook=kwargs.get('Notebook',False)
+            notebook = kwargs.get('Notebook', False)
             plotter = self.fragment_vectors_render(None, notebook=notebook)
 
         # Update the plotter in kwargs before calling super
@@ -989,9 +995,6 @@ class Fragment(Molecule):
                 molecule.extend(_fragment)
 
         return molecule
-
-    # def __add__(self, fragment):
-    #     return self.connect_fragment(fragment)
 
 
 # Define the standard_stator graph
