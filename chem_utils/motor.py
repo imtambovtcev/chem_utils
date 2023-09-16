@@ -897,9 +897,9 @@ class Fragment(Molecule):
         # Convert the reordered molecule to a Fragment instance and return
         return Fragment(reordered_molecule, attach_atom=new_attach_atom, attach_matrix=self.attach_matrix)
 
-    def fragment_vectors_render(self, plotter: pv.Plotter = None):
+    def fragment_vectors_render(self, plotter: pv.Plotter = None, notebook=False):
         if plotter is None:
-            plotter = pv.Plotter()
+            plotter = pv.Plotter(notebook=notebook)
         V0, V1, V2, V3 = self.fragment_vectors
         add_vector_to_plotter(plotter, V0, V1, color='red')
         add_vector_to_plotter(plotter, V0, V2, color='green')
@@ -928,7 +928,8 @@ class Fragment(Molecule):
         if 'plotter' in kwargs:
             plotter = self.fragment_vectors_render(kwargs['plotter'])
         else:
-            plotter = self.fragment_vectors_render(None)
+            notebook=kwargs.get('Notebook',False)
+            plotter = self.fragment_vectors_render(None, notebook=notebook)
 
         # Update the plotter in kwargs before calling super
         kwargs['plotter'] = plotter
