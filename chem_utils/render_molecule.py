@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import pathlib
 from .motor import Path
 
 
-def render_molecule_from_file(filename, save=None, alpha=1.0):
+def render_molecule_from_file(filename, alpha=1.0):
     path = Path.load(filename)
-    path.render(save=save, alpha=alpha)
+    path.render(save=str(filename)[:-4], alpha=alpha)
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
 
     _input = args.inputs
     print(_input)
-    _input = [Path(i) for i in _input]
+    _input = [pathlib.Path(i) for i in _input]
     inp = []
     for i in _input:
         if i.is_dir():
