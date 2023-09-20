@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
-from .utils import Spectrum, spectrum_from_orca_e
+from .spectrum import Spectrum
 import argparse
 
 
@@ -10,8 +10,7 @@ def plot_spectrum(file_list, vlim = [300, 500], sigma = 0.1, savefig='spectrum.p
     print(f'{normalize = }')
     fig, ax = plt.subplots()
     for file in file_list:
-        spectrum = spectrum_from_orca_e(file)
-        spectrum = Spectrum(spectrum['Energy(cm-1)']/8065.54429, spectrum['T2(au**2)'])
+        spectrum = Spectrum.load_orca(file)
         spectrum.plot_spectrum(fig, ax, wavelength_limits=vlim, sigma=sigma, normalize=normalize, label=str(file.parent))
     plt.xlabel(r'$\lambda, nm$')
     plt.ylabel(r'Intensity')
