@@ -759,7 +759,7 @@ class Molecule(Atoms):
         kwargs['alpha'] = kwargs.get('alpha', other_alpha)
         return other.render(p, *args, **kwargs)
 
-    def scheme_2D(self, filename=None):
+    def scheme(self, filename=None):
         """Compute 2D coordinates for the molecule using RDKit and visualize or save it."""
         mol = self.to_rdkit_mol()
 
@@ -1498,30 +1498,35 @@ class Path:
 
         return "\n".join(info)
 
-    def render(self):
-        current_idx = 0
-        p = self[current_idx].render()
-        print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
+    def render(self, save=None, **kwargs):
+        if save:
+            for i,image in enumerate(self):
+                image.render(save=f'{save}_{i}.png',**kwargs)
 
-        def key_press(obj, event):
-            nonlocal current_idx
-            key = obj.GetKeySym()  # Get the pressed key
-            if key == 'n' and current_idx < len(self) - 1:
-                current_idx += 1
-            elif key == 'p' and current_idx > 0:
-                current_idx -= 1
-            elif key == 'q':
-                # Exit the rendering
-                p.close()
-                return
-            # Update the rendered molecule based on the current_idx
-            p.clear()
-            self[current_idx].render(p)
-            p.reset_camera()
-            p.render()
+        else:
+            current_idx = 0
+            p = self[current_idx].render()
+            print("Press 'n' to move to the next molecule, 'p' to go back, and 'q' to quit.")
 
-        p.iren.add_observer('KeyPressEvent', key_press)
-        p.show()
+            def key_press(obj, event):
+                nonlocal current_idx
+                key = obj.GetKeySym()  # Get the pressed key
+                if key == 'n' and current_idx < len(self) - 1:
+                    current_idx += 1
+                elif key == 'p' and current_idx > 0:
+                    current_idx -= 1
+                elif key == 'q':
+                    # Exit the rendering
+                    p.close()
+                    return
+                # Update the rendered molecule based on the current_idx
+                p.clear()
+                self[current_idx].render(p)
+                p.reset_camera()
+                p.render()
+
+            p.iren.add_observer('KeyPressEvent', key_press)
+            p.show()
 
     def render_alongside(self, other, alpha=1.0):
         current_idx = 0
