@@ -255,6 +255,26 @@ class Molecule(Atoms):
         self.set_positions_no_reinit(new_coords, atoms)
         self.reinit()
 
+    def shake(self, amplitude=0.05):
+        """
+        Randomly displace the positions of all atoms in the molecule.
+
+        Parameters:
+        - amplitude (float): The maximum magnitude of displacement in any direction.
+        """
+        # Get the current positions of the atoms
+        positions = self.get_positions()
+
+        # Generate random displacements for each atom
+        displacements = np.random.uniform(-amplitude, amplitude, positions.shape)
+
+        # Apply the displacements to the atom positions
+        new_positions = positions + displacements
+
+        # Set the new positions
+        self.set_positions(new_positions)
+
+
     def divide_in_two(self, bond):
         G = self.G.copy()
         G.remove_edge(bond[0], bond[1])
