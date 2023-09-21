@@ -1,5 +1,5 @@
 from ase.collections import g2
-from chem_utils.motor import Molecule, Fragment, Motor
+from chem_utils import *
 import numpy as np
 
 
