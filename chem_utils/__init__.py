@@ -1,6 +1,8 @@
 from .molecule import Molecule
 from .fragment import Fragment
 from .motor import Motor
+from .path import Path
+from .frequency import Frequency
 
 # from .utils import *
 # from .allxyz_from_xyz import *

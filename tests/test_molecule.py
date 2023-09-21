@@ -15,6 +15,11 @@ def test_fragment():
     m = Motor(g2['C6H6'])
     Fragment(m, attach_atom=0)
 
+def test_path():
+    m1 = Motor(g2['C6H6'])
+    m2 = Motor(g2['C6H6'])
+    Path([m1,m2])
+
 
 def test_reorder():
     m = Molecule(g2['C6H6'])
