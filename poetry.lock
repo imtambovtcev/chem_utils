@@ -64,6 +64,24 @@ files = [
 ]
 
 [[package]]
+name = "cclib"
+version = "1.8"
+description = "cclib: parsers and algorithms for computational chemistry"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "cclib-1.8-py3-none-any.whl", hash = "sha256:28662da1bbbe80cf550cef73cfab4ec0f752cc2f9077ee1753efb3083ca1ba5a"},
+    {file = "cclib-1.8.tar.gz", hash = "sha256:12b7a7ed8191f02fa12320dbdc830546ee1615e8b4737e3d766f34622abbd521"},
+]
+
+[package.dependencies]
+numpy = "*"
+packaging = ">=19.0"
+periodictable = "*"
+scipy = ">=1.2.0"
+
+[[package]]
 name = "certifi"
 version = "2022.12.7"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -929,6 +947,22 @@ files = [
 ]
 
 [[package]]
+name = "periodictable"
+version = "1.6.1"
+description = "Extensible periodic table of the elements"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "periodictable-1.6.1-py2.py3-none-any.whl", hash = "sha256:5b02d7171e6a8bcb7060b086c6150ac4152a36b70edcd34e5549981d84d31eed"},
+    {file = "periodictable-1.6.1.tar.gz", hash = "sha256:7c501c9f73d77b1fb28cb51e85b28429c2c44a99ce3d1274894564c72d712603"},
+]
+
+[package.dependencies]
+numpy = "*"
+pyparsing = "*"
+
+[[package]]
 name = "pexpect"
 version = "4.8.0"
 description = "Pexpect allows easy control of interactive console applications."
@@ -1520,17 +1554,6 @@ files = [
 ]
 
 [[package]]
-name = "sklearn"
-version = "0.0.post9"
-description = "deprecated sklearn package, use scikit-learn instead"
-category = "main"
-optional = false
-python-versions = "*"
-files = [
-    {file = "sklearn-0.0.post9.tar.gz", hash = "sha256:1ff5864cf30489ee48a014fe8f4320d7bb59592392a4ef52ae9d7a37942615ac"},
-]
-
-[[package]]
 name = "stack-data"
 version = "0.6.2"
 description = "Extract data from python stack frames and tracebacks for informative displays"
@@ -1733,4 +1756,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "878624c8ad4f45965ca591288ce200c9926d362492c6940cf6d3348454db941b"
+content-hash = "4257e6d1e3b2f13260f466cd014c9208d43911b7a4db275e9e35467a16a35441"

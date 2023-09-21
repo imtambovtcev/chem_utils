@@ -20,6 +20,7 @@ pyperclip = "^1.8.2"
 ipython = "^8.15.0"
 rdkit = "^2023.3.3"
 scikit-learn = "^1.3.0"
+cclib = "^1.8"
 
 
 
