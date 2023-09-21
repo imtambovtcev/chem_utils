@@ -254,6 +254,30 @@ class Molecule(Atoms):
         # Set the new positions
         self.set_positions(new_positions)
 
+    def displace_along_mode(self, mode: np.ndarray, amplitude: float):
+        """
+        Displace each atom of the molecule along the given mode (vibration vector) 
+        by a specified amplitude (magnitude).
+        
+        Args:
+            mode (np.ndarray): A numpy array with shape (n_atoms, 3) representing 
+                the direction of displacement for each atom.
+            amplitude (float): The magnitude of the displacement along the mode.
+        """
+        # Validate the mode argument
+        if not isinstance(mode, np.ndarray) or mode.shape != (len(self), 3):
+            raise ValueError("mode must be a numpy array with shape (n_atoms, 3)")
+            
+        if not isinstance(amplitude, (int, float)):
+            raise ValueError("amplitude must be a numeric value")
+            
+        # Calculate the new positions of the atoms after displacement along the mode
+        new_positions = self.get_positions() + amplitude * mode
+        
+        # Set the new positions using the set_positions method of the Molecule class
+        self.set_positions(new_positions)
+
+
     def divide_in_two(self, bond):
         G = self.G.copy()
         G.remove_edge(bond[0], bond[1])
@@ -483,7 +507,7 @@ class Molecule(Atoms):
         self.set_positions(new_coords, island)
         return self
 
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
@@ -502,6 +526,7 @@ class Molecule(Atoms):
             auto_close (bool, optional): Whether to automatically close the rendering window after saving or completing the rendering. Defaults to True.
             interactive (bool, optional): Whether to allow interactive visualization (e.g., rotation, zoom). Defaults to False.
             background_color (str, optional): Color of the background in the render. Defaults to 'black'.
+            mode (np.array, optional): An array with shape (n_atoms, 3) representing vectors to be drawn from the center of each atom. Defaults to None.
 
         Returns:
             pv.Plotter: The PyVista plotter object with the rendered visualization.
@@ -703,6 +728,24 @@ class Molecule(Atoms):
                 arrow = pv.Arrow(start=origin, direction=direction,
                                  shaft_radius=0.05, tip_radius=0.1)
                 plotter.add_mesh(arrow, color=color)
+
+        if mode is not None:
+            # Validate the mode argument
+            if not isinstance(mode, np.ndarray) or mode.shape != (len(self), 3):
+                raise ValueError(
+                    "mode must be a numpy array with shape (n_atoms, 3)")
+
+            # Get positions of atoms
+            positions = self.get_positions()
+
+            # Iterate over atoms and add vectors
+            for i, position in enumerate(positions):
+                start_point = position
+                end_point = position + mode[i]
+                arrow = pv.Arrow(start=start_point,
+                                 direction=end_point - start_point)
+                # You can choose the color that suits your visualization
+                plotter.add_mesh(arrow, color='purple')
 
         # Display atom IDs if required
         if show_numbers:

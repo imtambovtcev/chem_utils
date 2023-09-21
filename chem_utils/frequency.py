@@ -3,8 +3,8 @@ import numpy as np
 
 
 class Frequency:
-    def __init__(self, frquenceies, modes):
-        self.frquenceies = frquenceies
+    def __init__(self, frequencies, modes):
+        self.frequencies = frequencies
         self.modes = modes
 
     @classmethod
