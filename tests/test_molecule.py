@@ -1,7 +1,7 @@
 from ase.collections import g2
 from chem_utils import *
 import numpy as np
-
+import os
 
 def test_molecule():
     Molecule(g2['C6H6'])
@@ -21,6 +21,19 @@ def test_reorder():
     new_m = m.get_standard_order()
     assert new_m.best_mapping(m) == {
         1: 1, 7: 0, 8: 2, 4: 7, 3: 5, 2: 3, 10: 6, 6: 8, 9: 4, 5: 11, 0: 9, 11: 10}
+
+
+def test_render():
+    m = Molecule(g2['C6H6'])
+    m.render()
+
+
+def test_molecule_save_load():
+    os.remove('tests/C6H6.xyz')
+    m = Molecule(g2['C6H6'])
+    m.save('tests/C6H6.xyz')
+    m = Molecule.load('tests/C6H6.xyz')
+    assert m.get_chemical_formula() == 'C6H6'
 
 
 def test_rotation():
