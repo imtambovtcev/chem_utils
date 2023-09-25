@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-from .motor import Path
+from .path import Path
 
 
 def render_molecule_from_file(filename, alpha=1.0):
