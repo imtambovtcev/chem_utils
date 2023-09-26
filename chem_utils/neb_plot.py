@@ -50,34 +50,18 @@ def neb_energy_from_ocra_interp(filename):
     return points, interpolation
 
 
-def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None, label=None):
+def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None, label=None, mode='first'):
     if isinstance(file, tuple) or isinstance(file, list):
         file_interpolate, file_out = file
     else:
         file_interpolate = file
         file_out = None
-    # print(f'{file_interpolate = } {file_out = }')
     try:
         points, interpolation = neb_energy_from_ocra_interp(file_interpolate)
         # print('Barrier = {}'.format(
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[-1]))
         # print('Barrier = {}'.format(
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[0]))
-        if fig is None:
-            fig, ax = plt.subplots()
-        line1, = ax.plot(interpolation['Interp'],interpolation['Energy, eV'], label=label)
-        line_color = line1.get_color()
-        ax.plot(points['Images'],points['Energy, eV'],'.', color=line_color)
-        ax.set_xlabel('Distance')
-        ax.set_ylabel('Energy, eV')
-
-        if label is not None:
-            plt.legend()
-        # interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
-        # points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
-
-        x_a, y_a = 0., points['Energy, eV'].iloc[0]
-        x_b, y_b = 1., points['Energy, eV'].iloc[-1]
 
         if file_out is None:
             x_ts, y_ts = points['Images'].iloc[points['Energy, eV'].argmax(
@@ -98,6 +82,32 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
             else:
                 x_ts, y_ts = points['Images'].iloc[points['Energy, eV'].argmax(
                 )], points['Energy, eV'].max()
+        # print(f'{file_interpolate = } {file_out = }')
+
+        match mode:
+            case 'saddle':
+                energy_ofset = points['Energy, eV'].iloc[0]+y_ts
+            case 'last':
+                energy_ofset = points['Energy, eV'].iloc[-1]
+            case _:
+                energy_ofset = points['Energy, eV'].iloc[0]
+
+        if fig is None:
+            fig, ax = plt.subplots()
+        line1, = ax.plot(interpolation['Interp'],
+                         interpolation['Energy, eV']-energy_ofset, label=label)
+        line_color = line1.get_color()
+        ax.plot(points['Images'], points['Energy, eV']-energy_ofset, '.', color=line_color)
+        ax.set_xlabel('Distance')
+        ax.set_ylabel('Energy, eV')
+
+        if label is not None:
+            plt.legend()
+        # interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
+        # points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
+
+        x_a, y_a = 0., points['Energy, eV'].iloc[0]-energy_ofset
+        x_b, y_b = 1., points['Energy, eV'].iloc[-1]-energy_ofset
 
         if sign_barriers:
             ax.plot([x_ts, x_a], [y_ts, y_ts], 'k')
