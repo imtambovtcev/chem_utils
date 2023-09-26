@@ -20,8 +20,8 @@ for ss in standard_stators:
 
 
 class Motor(Molecule):
-    def __init__(self, atoms):
-        super().__init__(atoms)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def find_bond(self):
         """
