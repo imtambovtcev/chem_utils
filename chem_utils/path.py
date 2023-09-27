@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-
 from ase import Atoms
 from ase.io import read, write
 
@@ -146,7 +145,7 @@ class Path:
         assert isinstance(self[0], Motor)
         zero_atom, x_atom, no_z_atom = self[0].find_rotation_atoms()
         for motor in self:
-            motor.rotate(zero_atom, x_atom, no_z_atom)
+            motor.to_origin(zero_atom, x_atom, no_z_atom)
 
     def reorder_atoms_of_intermediate_images(self):
         half_len = len(self) // 2

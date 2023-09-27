@@ -3,6 +3,8 @@ from .fragment import Fragment
 from .motor import Motor
 from .path import Path
 from .frequency import Frequency
+from .eldens import ElectronDensity
+from .constants import *
 
 # from .utils import *
 # from .allxyz_from_xyz import *

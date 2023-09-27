@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import pyperclip
 import pyvista as pv
-from ase import Atoms
+from ase import Atom, Atoms
 from ase.geometry.analysis import Analysis
 from ase.io import read, write
 from IPython.display import Image, display
@@ -26,12 +26,15 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 from .valency import add_valency, general_print, rebond
+from .eldens import ElectronDensity, DEFAULT_ELDENS_SETTINGS
 
-default_atoms_settings = pd.read_csv(
+from .constants import BOHR_TO_ANGSTROM
+
+DEFAULT_ATOMS_SETTINGS = pd.read_csv(
     str(pathlib.Path(__file__).parent/'pyvista_render_settings.csv'))
-default_atoms_settings.index = list(default_atoms_settings['Name'])
-default_atoms_settings['Color'] = [[int(i) for i in s.replace(
-    '[', '').replace(']', '').split(',')] for s in default_atoms_settings['Color']]
+DEFAULT_ATOMS_SETTINGS.index = list(DEFAULT_ATOMS_SETTINGS['Name'])
+DEFAULT_ATOMS_SETTINGS['Color'] = [[int(i) for i in s.replace(
+    '[', '').replace(']', '').split(',')] for s in DEFAULT_ATOMS_SETTINGS['Color']]
 
 
 def fragment_vectors(i, coords):
@@ -127,6 +130,7 @@ def rotation_matrix(axis, theta):
 class Molecule(Atoms):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.electron_density = None  # Placeholder for the ElectronDensity object
         self.reinit()
 
     def reinit(self):
@@ -189,6 +193,25 @@ class Molecule(Atoms):
 
         return molecule
 
+    @classmethod
+    def load_from_cube(cls, cube_file_path):
+        # Use the ElectronDensity class method to read cube file
+        data, meta = ElectronDensity.read_cube(cube_file_path)
+
+        # Extract atoms information from meta
+        atoms_info = meta['atoms']
+        numbers = [atomic_number for atomic_number, _ in atoms_info]
+        positions = [np.array(coordinates[1:]) *
+                     BOHR_TO_ANGSTROM for _, coordinates in atoms_info]
+
+        # Create a Molecule instance with the extracted atomic numbers and positions
+        molecule = cls(numbers=numbers, positions=positions)
+
+        # Create an ElectronDensity instance and assign it to the molecule's electron_density attribute
+        molecule.electron_density = ElectronDensity(data, meta)
+
+        return molecule
+
     def __eq__(self, other: Atoms):
         """
         Molecules are equal if they have the same atoms
@@ -234,6 +257,59 @@ class Molecule(Atoms):
         self.set_positions_no_reinit(new_coords, atoms)
         self.reinit()
 
+    def translate(self, translation_vector):
+        """
+        Translates the points by the given translation vector.
+
+        :param translation_vector: 1x3 translation vector
+        """
+        assert len(
+            translation_vector) == 3, "Translation vector must be a 1x3 vector."
+        self.positions += translation_vector  # Translate each point
+        if self.electron_density is not None:
+            self.electron_density.translate(translation_vector)
+
+    def rotate(self, rotation_matrix):
+        """
+        Rotates the points around the origin using the provided rotation matrix.
+
+        :param rotation_matrix: 3x3 rotation matrix
+        """
+        assert rotation_matrix.shape == (
+            3, 3), "Rotation matrix must be a 3x3 matrix."
+        # Rotate each point
+        self.positions = np.dot(self.positions, rotation_matrix.T)
+        if self.electron_density is not None:
+            self.electron_density.rotate(rotation_matrix)
+
+    def to_origin(self, zero_atom=None, x_atom=None, no_z_atom=None):
+        """
+        Move molecule by 3 atoms:
+        - zero_atom: to be placed to (0,0,0)
+        - x_atom: to be placed to (?, 0, 0)
+        - no_z_atom: to be placed to (?, ?, 0)
+        """
+        if all(variable is None for variable in (zero_atom, x_atom, no_z_atom)):
+            zero_atom, x_atom, no_z_atom = self.find_rotation_atoms()
+
+        self.translate(-self.positions[zero_atom, :])
+        rm = rotation_matrix(np.cross(self.positions[x_atom, :], [1, 0, 0]), np.arccos(
+            np.dot(self.positions[x_atom, :], [1, 0, 0])/np.linalg.norm(self.positions[x_atom, :])))
+        self.rotate(rm)
+        rm = rotation_matrix(np.array(
+            [1., 0., 0.]), -np.arctan2(self.positions[no_z_atom, 2], self.positions[no_z_atom, 1]))
+        self.rotate(rm)
+
+    def rotate_part(self, atom, bond, angle):
+        edge = bond if bond[0] == atom else bond[::-1]
+        r0 = self.get_positions()[atom]
+        v = self.get_positions()[edge[1]]-r0
+        island = self.divide_in_two(edge)[0]
+        r = rotation_matrix(v, np.pi*angle/180)
+        new_coords = np.matmul(r, (self.get_positions()[island]-r0).T).T+r0
+        self.set_positions(new_coords, island)
+        return self
+
     def shake(self, amplitude=0.05):
         """
         Randomly displace the positions of all atoms in the molecule.
@@ -258,7 +334,7 @@ class Molecule(Atoms):
         """
         Displace each atom of the molecule along the given mode (vibration vector) 
         by a specified amplitude (magnitude).
-        
+
         Args:
             mode (np.ndarray): A numpy array with shape (n_atoms, 3) representing 
                 the direction of displacement for each atom.
@@ -266,17 +342,17 @@ class Molecule(Atoms):
         """
         # Validate the mode argument
         if not isinstance(mode, np.ndarray) or mode.shape != (len(self), 3):
-            raise ValueError("mode must be a numpy array with shape (n_atoms, 3)")
-            
+            raise ValueError(
+                "mode must be a numpy array with shape (n_atoms, 3)")
+
         if not isinstance(amplitude, (int, float)):
             raise ValueError("amplitude must be a numeric value")
-            
+
         # Calculate the new positions of the atoms after displacement along the mode
         new_positions = self.get_positions() + amplitude * mode
-        
+
         # Set the new positions using the set_positions method of the Molecule class
         self.set_positions(new_positions)
-
 
     def divide_in_two(self, bond):
         G = self.G.copy()
@@ -497,23 +573,13 @@ class Molecule(Atoms):
         # Return all edges of the subgraph
         return list(subgraph.edges())
 
-    def rotate_part(self, atom, bond, angle):
-        edge = bond if bond[0] == atom else bond[::-1]
-        r0 = self.get_positions()[atom]
-        v = self.get_positions()[edge[1]]-r0
-        island = self.divide_in_two(edge)[0]
-        r = rotation_matrix(v, np.pi*angle/180)
-        new_coords = np.matmul(r, (self.get_positions()[island]-r0).T).T+r0
-        self.set_positions(new_coords, island)
-        return self
-
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=default_atoms_settings, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None, eldens_settings=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
         Args:
             plotter (pv.Plotter, optional): The PyVista plotter object used for rendering. If not provided, a new one will be created. Defaults to None.
-            atoms_settings (DataFrame, optional): A dataframe containing the visualization settings for each atom type. Defaults to default_atoms_settings.
+            atoms_settings (DataFrame, optional): A dataframe containing the visualization settings for each atom type. Defaults to DEFAULT_ATOMS_SETTINGS.
             show_hydrogens (bool, optional): Whether to render hydrogen atoms. Defaults to True.
             alpha (float, optional): The opacity of the rendered atoms and bonds. Value should be between 0 (transparent) and 1 (opaque). Defaults to 1.0.
             atom_numbers (bool, optional): Whether to display atom numbers. Defaults to False.
@@ -533,7 +599,10 @@ class Molecule(Atoms):
         """
 
         if atoms_settings is None:
-            atoms_settings = default_atoms_settings
+            atoms_settings = DEFAULT_ATOMS_SETTINGS
+
+        if eldens_settings is None:
+            eldens_settings = DEFAULT_ELDENS_SETTINGS
 
         if plotter is None:
             if save:
@@ -717,6 +786,15 @@ class Molecule(Atoms):
                     plotter.add_mesh(cylinder, color='#FF0000',
                                      smooth_shading=True, opacity=alpha)
 
+        if self.electron_density is not None and ('show' not in eldens_settings.keys() or eldens_settings['show']):
+            # Read the cube file and create a structured grid
+            _eldens_settings = eldens_settings.copy()
+            _eldens_settings['plotter'] = plotter
+            _eldens_settings['save'] = False
+            _eldens_settings['show'] = False
+            _eldens_settings['notebook'] = notebook
+            self.electron_density.render(**_eldens_settings)
+
         if show_basis_vectors:
             origin = np.array([0, 0, 0])
 
@@ -827,23 +905,6 @@ class Molecule(Atoms):
         _, fragment = self.divide_in_two_fragments(
             fragment_attach_atom, fragment_atoms_ids)
         return fragment
-
-    def rotate(self, zero_atom=None, x_atom=None, no_z_atom=None):
-        """
-        rotate molecule by 3 atoms:
-        - zero_atom: to be placed to (0,0,0)
-        - x_atom: to be placed to (?, 0, 0)
-        - no_z_atom: to be placed to (?, ?, 0)
-        """
-        if all(variable is None for variable in (zero_atom, x_atom, no_z_atom)):
-            zero_atom, x_atom, no_z_atom = self.find_rotation_atoms()
-        positions = self.get_positions()
-        positions -= positions[zero_atom, :]
-        positions = np.matmul(rotation_matrix(np.cross(positions[x_atom, :], [1, 0, 0]), np.arccos(
-            np.dot(positions[x_atom, :], [1, 0, 0])/np.linalg.norm(positions[x_atom, :]))), positions.T).T
-        positions = np.matmul(rotation_matrix(np.array(
-            [1., 0., 0.]), -np.arctan2(positions[no_z_atom, 2], positions[no_z_atom, 1])), positions.T).T
-        self.set_positions(positions)
 
     def to_xyz_string(self):
         sio = io.StringIO()

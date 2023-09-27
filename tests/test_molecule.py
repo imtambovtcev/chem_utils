@@ -3,6 +3,7 @@ from chem_utils import *
 import numpy as np
 import os
 
+
 def test_molecule():
     Molecule(g2['C6H6'])
 
@@ -15,10 +16,11 @@ def test_fragment():
     m = Motor(g2['C6H6'])
     Fragment(m, attach_atom=0)
 
+
 def test_path():
     m1 = Motor(g2['C6H6'])
     m2 = Motor(g2['C6H6'])
-    Path([m1,m2])
+    Path([m1, m2])
 
 
 def test_reorder():
@@ -30,6 +32,39 @@ def test_reorder():
 
 def test_render():
     m = Molecule(g2['C6H6'])
+    m.render()
+
+
+def test_eldens():
+    ElectronDensity.load('tests/C2H4.eldens.cube')
+
+
+def test_eldens_render():
+    m = ElectronDensity.load('tests/C2H4.eldens.cube')
+    m.render()
+
+
+def test_molecule_from_eldens():
+    m = Molecule.load_from_cube('tests/C2H4.eldens.cube')
+    m.rotate(np.array([
+        [np.cos(np.radians(45)), -np.sin(np.radians(45)), 0],
+        [np.sin(np.radians(45)), np.cos(np.radians(45)), 0],
+        [0, 0, 1]]))
+    m.translate(np.array([1., 0., 0.]))
+    assert np.linalg.norm(m.positions-np.array([[0.12247267, -0.59563596, -3.17528129],
+                                                [-0.0358741,  0.14036158, -
+                                                    2.11545416],
+                                                [0.16072858, -
+                                                    1.67115906, -3.08479992],
+                                                [0.24072292, -
+                                                    0.13057927, -4.14282414],
+                                                [-0.63260717, -
+                                                    0.22125846, -1.29111143],
+                                                [0.44973282,  1.10274504, -2.04909693]])) < 1e-5
+
+
+def test_molecule_from_eldens_render():
+    m = Molecule.load_from_cube('tests/C2H4.eldens.cube')
     m.render()
 
 
