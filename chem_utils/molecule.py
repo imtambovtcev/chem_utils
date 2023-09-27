@@ -208,7 +208,7 @@ class Molecule(Atoms):
         molecule = cls(numbers=numbers, positions=positions)
 
         # Create an ElectronDensity instance and assign it to the molecule's electron_density attribute
-        molecule.electron_density = ElectronDensity(data, meta)
+        molecule.electron_density = ElectronDensity(data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
 
         return molecule
 

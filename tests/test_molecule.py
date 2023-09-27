@@ -51,16 +51,12 @@ def test_molecule_from_eldens():
         [np.sin(np.radians(45)), np.cos(np.radians(45)), 0],
         [0, 0, 1]]))
     m.translate(np.array([1., 0., 0.]))
-    assert np.linalg.norm(m.positions-np.array([[0.12247267, -0.59563596, -3.17528129],
-                                                [-0.0358741,  0.14036158, -
-                                                    2.11545416],
-                                                [0.16072858, -
-                                                    1.67115906, -3.08479992],
-                                                [0.24072292, -
-                                                    0.13057927, -4.14282414],
-                                                [-0.63260717, -
-                                                    0.22125846, -1.29111143],
-                                                [0.44973282,  1.10274504, -2.04909693]])) < 1e-5
+    assert np.allclose(m.positions, np.array([[0.12247267, -0.59563596, -3.17528129],
+                                             [-0.0358741,  0.14036158, -2.11545416],
+                                             [0.16072858, - 1.67115906, -3.08479992],
+                                             [0.24072292, - 0.13057927, -4.14282414],
+                                             [-0.63260717, -0.22125846, -1.29111143],
+                                              [0.44973282,  1.10274504, -2.04909693]]))
 
 
 def test_molecule_from_eldens_render():
@@ -79,7 +75,7 @@ def test_molecule_save_load():
 def test_rotation():
     m = Molecule(g2['C2H4'])
     new_m = m.rotate_part(0, [0, 1], 90)
-    assert np.linalg.norm(new_m.get_positions()[0]-[0., 0., 0.66748]) < 1e5
+    assert np.allclose(new_m.get_positions()[0],[0., 0., 0.66748])
 
 
 def test_simple_bonds():
