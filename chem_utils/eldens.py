@@ -49,10 +49,10 @@ class ElectronDensity:
     def read_cube(fname):
         """
         Reads a cube file and extracts metadata and volumetric data.
-        
+
         Parameters:
             fname (str): Path to the cube file.
-            
+
         Returns:
             numpy.ndarray: A 3D array containing the volumetric data.
             dict: A dictionary containing metadata extracted from the cube file.
@@ -77,7 +77,8 @@ class ElectronDensity:
             meta['zvec'] = [z * BOHR_TO_ANGSTROM for z in meta['zvec']]
 
             # Extract atom information, considering the absolute value of natm, as natm can be negative for molecular orbitals
-            meta['atoms'] = [ElectronDensity._getline(cube) for _ in range(abs(natm))]
+            meta['atoms'] = [ElectronDensity._getline(
+                cube) for _ in range(abs(natm))]
 
             data_values = []
             firstline = True
@@ -86,20 +87,22 @@ class ElectronDensity:
                 values_in_line = [float(val) for val in line.strip().split()]
                 if firstline:
                     firstline = False
-                    if len(values_in_line) == 2:  # If the first line contains two elements, it is considered as orbital info and skipped
+                    # If the first line contains two elements, it is considered as orbital info and skipped
+                    if len(values_in_line) == 2:
                         continue
-                data_values.extend(values_in_line)  # Extend the list with the actual data values
+                # Extend the list with the actual data values
+                data_values.extend(values_in_line)
 
             # Check if the read data points match the expected data points
             if len(data_values) != nx * ny * nz:
-                raise ValueError(f"Number of data points in the file ({len(data_values)}) does not match the expected size ({nx * ny * nz})")
+                raise ValueError(
+                    f"Number of data points in the file ({len(data_values)}) does not match the expected size ({nx * ny * nz})")
 
             # Reshape the 1D list of data_values to a 3D array and swap axes to match the expected orientation
             data = np.array(data_values).reshape((nx, ny, nz))
             data = np.swapaxes(data, 0, -1)
 
         return data, meta
-
 
     @classmethod
     def load(cls, cube_file_path):
@@ -108,6 +111,20 @@ class ElectronDensity:
 
         # Return an instance of ElectronDensity initialized with data and essential metadata
         return cls(data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
+
+    def copy(self):
+        """
+        Creates a copy of the ElectronDensity instance.
+        
+        Returns:
+            ElectronDensity: A new instance of ElectronDensity with the same attributes as the original.
+        """
+        # Create a new instance of ElectronDensity with the same attributes as the original instance
+        return ElectronDensity(np.copy(self.electron_density),
+                            np.copy(self.org),
+                            np.copy(self.xvec),
+                            np.copy(self.yvec),
+                            np.copy(self.zvec))
 
     def rotate(self, rotation_matrix):
         assert rotation_matrix.shape == (

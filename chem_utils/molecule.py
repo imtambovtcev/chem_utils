@@ -238,6 +238,8 @@ class Molecule(Atoms):
         new_molecule.set_cell(self.get_cell().copy())
         new_molecule.set_pbc(self.get_pbc().copy())
         new_molecule.info = self.info.copy()
+        if self.electron_density is not None:
+            new_molecule.electron_density = self.electron_density.copy()
         return new_molecule
 
     def extend(self, atoms):
