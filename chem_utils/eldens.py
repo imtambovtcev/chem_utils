@@ -47,31 +47,59 @@ class ElectronDensity:
 
     @staticmethod
     def read_cube(fname):
+        """
+        Reads a cube file and extracts metadata and volumetric data.
+        
+        Parameters:
+            fname (str): Path to the cube file.
+            
+        Returns:
+            numpy.ndarray: A 3D array containing the volumetric data.
+            dict: A dictionary containing metadata extracted from the cube file.
+        """
         meta = {}
         with open(fname, 'r') as cube:
+            cube.readline()  # Skip the first two comment lines in the cube file
             cube.readline()
-            cube.readline()  # ignore comments
+
+            # Read metadata: number of atoms (natm) and origin (meta['org'])
             natm, meta['org'] = ElectronDensity._getline(cube)
+
+            # Read the number of points and vector information in each dimension
             nx, meta['xvec'] = ElectronDensity._getline(cube)
             ny, meta['yvec'] = ElectronDensity._getline(cube)
             nz, meta['zvec'] = ElectronDensity._getline(cube)
 
-            # Convert from Bohr to Angstroms
+            # Convert from Bohr to Angstroms for origin and vectors
             meta['org'] = [x * BOHR_TO_ANGSTROM for x in meta['org']]
             meta['xvec'] = [x * BOHR_TO_ANGSTROM for x in meta['xvec']]
             meta['yvec'] = [y * BOHR_TO_ANGSTROM for y in meta['yvec']]
             meta['zvec'] = [z * BOHR_TO_ANGSTROM for z in meta['zvec']]
 
-            meta['atoms'] = [ElectronDensity._getline(
-                cube) for i in range(natm)]
-            data = np.zeros((nx * ny * nz))
-            idx = 0
+            # Extract atom information, considering the absolute value of natm, as natm can be negative for molecular orbitals
+            meta['atoms'] = [ElectronDensity._getline(cube) for _ in range(abs(natm))]
+
+            data_values = []
+            firstline = True
+
             for line in cube:
-                for val in line.strip().split():
-                    data[idx] = float(val)
-                    idx += 1
-        data = np.swapaxes(np.reshape(data, (nx, ny, nz)), 0, -1)
+                values_in_line = [float(val) for val in line.strip().split()]
+                if firstline:
+                    firstline = False
+                    if len(values_in_line) == 2:  # If the first line contains two elements, it is considered as orbital info and skipped
+                        continue
+                data_values.extend(values_in_line)  # Extend the list with the actual data values
+
+            # Check if the read data points match the expected data points
+            if len(data_values) != nx * ny * nz:
+                raise ValueError(f"Number of data points in the file ({len(data_values)}) does not match the expected size ({nx * ny * nz})")
+
+            # Reshape the 1D list of data_values to a 3D array and swap axes to match the expected orientation
+            data = np.array(data_values).reshape((nx, ny, nz))
+            data = np.swapaxes(data, 0, -1)
+
         return data, meta
+
 
     @classmethod
     def load(cls, cube_file_path):

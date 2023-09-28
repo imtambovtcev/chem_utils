@@ -601,9 +601,6 @@ class Molecule(Atoms):
         if atoms_settings is None:
             atoms_settings = DEFAULT_ATOMS_SETTINGS
 
-        if eldens_settings is None:
-            eldens_settings = DEFAULT_ELDENS_SETTINGS
-
         if plotter is None:
             if save:
                 plotter = pv.Plotter(notebook=False, off_screen=True,
@@ -786,7 +783,9 @@ class Molecule(Atoms):
                     plotter.add_mesh(cylinder, color='#FF0000',
                                      smooth_shading=True, opacity=alpha)
 
-        if self.electron_density is not None and ('show' not in eldens_settings.keys() or eldens_settings['show']):
+        if self.electron_density is not None and eldens_settings is not None and ('show' not in eldens_settings.keys() or eldens_settings['show']):
+            # if eldens_settings is None:
+            #     eldens_settings = DEFAULT_ELDENS_SETTINGS
             # Read the cube file and create a structured grid
             _eldens_settings = eldens_settings.copy()
             _eldens_settings['plotter'] = plotter
@@ -832,33 +831,33 @@ class Molecule(Atoms):
             plotter.add_point_labels(
                 poly, "Atom IDs", point_size=20, font_size=36, render_points_as_spheres=False)
 
-        # Hotkey functions
-        def copy_camera_position_to_clipboard():
-            cam_pos = plotter.camera_position
-            cam_pos_str = f"{cam_pos}"
-            print(cam_pos_str)
-            pyperclip.copy(cam_pos_str)
-
-        def save_render_view_with_dialog():
-            root = tk.Tk()
-            root.withdraw()
-            file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[
-                                                    ("PNG files", "*.png"), ("All files", "*.*")])
-            if file_path:
-                plotter.screenshot(file_path)
-                print(f"Saved image as '{file_path}'.")
-
         # If saving is required, save the screenshot
         if isinstance(save, str):
             plotter.show(window_size=[1000, 1000], cpos=cpos)
             plotter.screenshot(save)
             return None
 
-        plotter.add_key_event("c", copy_camera_position_to_clipboard)
-        plotter.add_key_event("p", save_render_view_with_dialog)
-
         # If showing is required, display the visualization
         if show:
+                        # Hotkey functions
+            def copy_camera_position_to_clipboard():
+                cam_pos = plotter.camera_position
+                cam_pos_str = f"{cam_pos}"
+                print(cam_pos_str)
+                pyperclip.copy(cam_pos_str)
+
+            def save_render_view_with_dialog():
+                root = tk.Tk()
+                root.withdraw()
+                file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[
+                                                        ("PNG files", "*.png"), ("All files", "*.*")])
+                if file_path:
+                    plotter.screenshot(file_path)
+                    print(f"Saved image as '{file_path}'.")
+
+            plotter.add_key_event("c", copy_camera_position_to_clipboard)
+            plotter.add_key_event("p", save_render_view_with_dialog)
+
             plotter.show(window_size=[1000, 1000], cpos=cpos,
                          auto_close=auto_close, interactive=interactive)
 
