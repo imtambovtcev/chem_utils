@@ -1,13 +1,16 @@
 # Chem Utils
-
+1. Clone the repository to your local machine:
+   ```
+   git clone https://gitlab.com/imtambovtcev/chem_utils.git
+   ```
 2. Navigate to the cloned repository:
 
-   ```shell
+   ```
    cd chem_utils
    ```
 3. Install the package in editable mode:
    ```
-   pip install . -e
+   pip install -e .
    ```
 
 ## Modules
