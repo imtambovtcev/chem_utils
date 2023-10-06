@@ -6,7 +6,7 @@ from ase.io import write
 from ase.geometry.analysis import Analysis
 import numpy as np
 from .format_xyz import format_xyz_file
-from .allxyz_from_xyz import xyz_to_allxyz
+from .xyz_to_allxyz import xyz_to_allxyz
 from pathlib import Path
 
 
