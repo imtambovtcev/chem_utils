@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import pyperclip
 import pyvista as pv
-from ase import Atom, Atoms
+from ase import Atoms
 from ase.geometry.analysis import Analysis
 from ase.io import read, write
 from IPython.display import Image, display
@@ -25,10 +25,9 @@ from rdkit.Chem.rdDepictor import Compute2DCoords
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
-from .valency import add_valency, general_print, rebond
-from .eldens import ElectronDensity, DEFAULT_ELDENS_SETTINGS
-
 from .constants import BOHR_TO_ANGSTROM
+from .eldens import ElectronDensity
+from .valency import add_valency, general_print, rebond
 
 DEFAULT_ATOMS_SETTINGS = pd.read_csv(
     str(pathlib.Path(__file__).parent/'pyvista_render_settings.csv'))
@@ -185,6 +184,12 @@ class Molecule(Atoms):
 
     @classmethod
     def load(cls, filename):
+        # Check if the file format is 'cube'
+        if filename.lower().endswith('.cube'):
+            # Display a warning if the format is 'cube'
+            warnings.warn(
+                "To get the surface information, use the 'load_from_cube' method.")
+
         # Use ASE's read function to get Atoms object from file
         atoms = read(filename)
 
@@ -208,7 +213,8 @@ class Molecule(Atoms):
         molecule = cls(numbers=numbers, positions=positions)
 
         # Create an ElectronDensity instance and assign it to the molecule's electron_density attribute
-        molecule.electron_density = ElectronDensity(data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
+        molecule.electron_density = ElectronDensity(
+            data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
 
         return molecule
 
@@ -841,7 +847,7 @@ class Molecule(Atoms):
 
         # If showing is required, display the visualization
         if show:
-                        # Hotkey functions
+            # Hotkey functions
             def copy_camera_position_to_clipboard():
                 cam_pos = plotter.camera_position
                 cam_pos_str = f"{cam_pos}"
