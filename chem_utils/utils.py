@@ -1,8 +1,11 @@
-import numpy as np
-import re
 import json
+import re
 import warnings
+
+import numpy as np
 import pandas as pd
+
+from .constants import EH_TO_EV
 
 numeric_const_pattern = '[-+]? (?: (?: \d* \. \d+ ) | (?: \d+ \.? ) )(?: [Ee] [+-]? \d+ ) ?'
 rx = re.compile(numeric_const_pattern, re.VERBOSE)
@@ -83,27 +86,40 @@ def energy_from_ocra_ev(filename):
     return 27.2113961318065*energy_from_ocra(filename)
 
 
-def surface_energy_from_ocra(filename):
-    data = pd.DataFrame()
-    with open(filename) as f:
-        lines = f.readlines()
-        for id, line in enumerate(lines[::-1]):
-            if line.startswith('The Calculated Surface using the'):
-                break
-        # print(f'{id = }')
-        # print(f'{line = }')
-        id = len(lines) - id
-        for line in lines[id + 1:]:
-            if line.startswith('------------------') or len(line) <= 2:
-                break
-            d = rx.findall(line)
-            try:
-                data = pd.concat([data, pd.DataFrame(
-                    {'param': [float(d[0])], 'E(Eh)': [float(d[1])]})], ignore_index=True)
-            except:
-                pass
+def surface_energy_from_orca(filename, energy_type='Actual Energy'):
+    """
+    Extracts surface energy data from ORCA output file.
 
-    return data
+    Parameters:
+    - filename: Name of the ORCA output file.
+    - energy_type: Type of energy to extract. Can be 'Actual Energy' or 'SCF energy'.
+
+    Returns:
+    - DataFrame containing the extracted data.
+    """
+    data = []
+    pattern = re.compile(r"(\d+\.\d+)\s+(-?\d+\.\d+)")
+
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+        # Find the starting line based on energy type, but search from the end
+        start_line = next((len(lines) - 1 - i for i,
+                          line in enumerate(reversed(lines)) if energy_type in line), None)
+        if start_line is None:
+            raise ValueError(f"'{energy_type}' not found in the file.")
+
+        # Extract data
+        for line in lines[start_line+1:]:
+            if line.startswith('------------------') or len(line.strip()) == 0:
+                break
+            match = pattern.search(line)
+            if match:
+                param, e_eh = [float(val) for val in match.groups()]
+                e_ev = e_eh * EH_TO_EV  # Convert from Hartree to eV
+                data.append({'param': param, 'E(Eh)': e_eh, 'E(eV)': e_ev})
+
+    return pd.DataFrame(data)
 
 
 def energy_from_gpaw(filename):
@@ -394,4 +410,3 @@ def neb_free_energy_from_ocra(filename):
         return np.nan
 
     return 27.2114*free_energy
-
