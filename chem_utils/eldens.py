@@ -115,16 +115,16 @@ class ElectronDensity:
     def copy(self):
         """
         Creates a copy of the ElectronDensity instance.
-        
+
         Returns:
             ElectronDensity: A new instance of ElectronDensity with the same attributes as the original.
         """
         # Create a new instance of ElectronDensity with the same attributes as the original instance
         return ElectronDensity(np.copy(self.electron_density),
-                            np.copy(self.org),
-                            np.copy(self.xvec),
-                            np.copy(self.yvec),
-                            np.copy(self.zvec))
+                               np.copy(self.org),
+                               np.copy(self.xvec),
+                               np.copy(self.yvec),
+                               np.copy(self.zvec))
 
     def rotate(self, rotation_matrix):
         assert rotation_matrix.shape == (
@@ -198,7 +198,11 @@ class ElectronDensity:
                grid_points_color="r", grid_points_size=5, save=None, show=False):
 
         if plotter is None:
-            plotter = pv.Plotter(notebook=notebook)
+            if save:
+                plotter = pv.Plotter(notebook=False, off_screen=True,
+                                     line_smoothing=True, polygon_smoothing=True, image_scale=5)
+            else:
+                plotter = pv.Plotter(notebook=notebook)
 
         nx, ny, nz = self.dimensions
         x, y, z = self.points.T.reshape(3, nx, ny, nz)
