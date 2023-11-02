@@ -57,6 +57,8 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
         file_interpolate = file
         file_out = None
     try:
+        if fig is None:
+            fig, ax = plt.subplots()
         points, interpolation = neb_energy_from_ocra_interp(file_interpolate)
         # print('Barrier = {}'.format(
         #     points['Energy, eV'].max()-points['Energy, eV'].iloc[-1]))
@@ -92,8 +94,7 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
             case _:
                 energy_ofset = points['Energy, eV'].iloc[0]
 
-        if fig is None:
-            fig, ax = plt.subplots()
+
         line1, = ax.plot(interpolation['Interp'],
                          interpolation['Energy, eV']-energy_ofset, label=label)
         line_color = line1.get_color()
@@ -136,7 +137,7 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
             plt.show()
         return fig, ax
     except Exception as e:
-        print(e)
+        print(f'Plotting failed with error:\n{e}')
         fig, ax = plt.subplots()
         return fig, ax
 
