@@ -4,6 +4,7 @@ from .motor import Motor
 from .path import Path
 from .frequency import Frequency
 from .eldens import ElectronDensity
+from .spectrum import Spectrum
 from .constants import *
 
 # from .utils import *
