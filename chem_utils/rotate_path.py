@@ -3,7 +3,8 @@ import pathlib
 from ase import Atoms
 from ase.io import read, write
 
-from .motor import Motor, Path
+from .motor import Motor
+from .path import Path
 
 
 def rotate_path(input_path, settings=None):
