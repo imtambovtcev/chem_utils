@@ -124,6 +124,13 @@ class Motor(Molecule):
         rotor = self.get_fragment(f_b['bond_rotor_node'], rotor)
         return stator, rotor
 
+    def get_stator_rotor_with_bond(self):
+        f_b = self.get_stator_rotor_bond()
+        stator_list, _ = self.divide_in_two(f_b['bond'])
+        rotor, stator = self.divide_in_two_fragments(
+            f_b['bond_stator_node'], stator_list)
+        return stator, rotor
+
     def get_rotor_H(self):
         f_b = self.get_stator_rotor_bond()
         # for i in self.get_bonded_atoms_of(f_b['C_H_stator']):
