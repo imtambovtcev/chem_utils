@@ -195,7 +195,7 @@ class ElectronDensity:
 
     def render(self, plotter=None, isosurface_value=0.1, isosurface_color='b', show_grid_surface=False,
                show_grid_points=False, notebook=False, opacity=0.3, grid_surface_color="b",
-               grid_points_color="r", grid_points_size=5, save=None, show=False):
+               grid_points_color="r", grid_points_size=5, save=None, show=False, smooth_surface=True):
 
         if plotter is None:
             if save:
@@ -209,9 +209,14 @@ class ElectronDensity:
         grid = pv.StructuredGrid(x, y, z)
 
         if isosurface_value is not None:
-            plotter.add_mesh(grid.contour(scalars=self.electron_density.ravel(),
-                                          isosurfaces=[isosurface_value]),
-                             color=isosurface_color, opacity=opacity, show_scalar_bar=False)
+            contour = grid.contour(
+                scalars=self.electron_density.ravel(), isosurfaces=[isosurface_value])
+            if smooth_surface:
+                contour = contour.subdivide(nsub=2, subfilter='loop')
+                contour = contour.smooth(n_iter=50)
+
+            plotter.add_mesh(contour, color=isosurface_color,
+                             opacity=opacity, show_scalar_bar=False)
 
         if show_grid_surface:
             plotter.add_mesh(grid.outline(), color=grid_surface_color)
