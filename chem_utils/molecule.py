@@ -36,6 +36,73 @@ DEFAULT_ATOMS_SETTINGS['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in DEFAULT_ATOMS_SETTINGS['Color']]
 
 
+def rotation_matrix_from_points(m0, m1):
+    """Returns a rigid transformation/rotation matrix that minimizes the
+    RMSD between two set of points.
+
+    m0 and m1 should be (3, npoints) numpy arrays with
+    coordinates as columns::
+
+        (x1  x2   x3   ... xN
+         y1  y2   y3   ... yN
+         z1  z2   z3   ... zN)
+
+    The centeroids should be set to origin prior to
+    computing the rotation matrix.
+
+    The rotation matrix is computed using quaternion
+    algebra as detailed in::
+
+        Melander et al. J. Chem. Theory Comput., 2015, 11,1055
+    """
+
+    v0 = np.copy(m0)
+    v1 = np.copy(m1)
+
+    # compute the rotation quaternion
+
+    R11, R22, R33 = np.sum(v0 * v1, axis=1)
+    R12, R23, R31 = np.sum(v0 * np.roll(v1, -1, axis=0), axis=1)
+    R13, R21, R32 = np.sum(v0 * np.roll(v1, -2, axis=0), axis=1)
+
+    f = [[R11 + R22 + R33, R23 - R32, R31 - R13, R12 - R21],
+         [R23 - R32, R11 - R22 - R33, R12 + R21, R13 + R31],
+         [R31 - R13, R12 + R21, -R11 + R22 - R33, R23 + R32],
+         [R12 - R21, R13 + R31, R23 + R32, -R11 - R22 + R33]]
+
+    F = np.array(f)
+
+    w, V = np.linalg.eigh(F)
+    # eigenvector corresponding to the most
+    # positive eigenvalue
+    q = V[:, np.argmax(w)]
+
+    # Rotation matrix from the quaternion q
+
+    R = quaternion_to_matrix(q)
+
+    return R
+
+
+def quaternion_to_matrix(q):
+    """Returns a rotation matrix.
+
+    Computed from a unit quaternion Input as (4,) numpy array.
+    """
+
+    q0, q1, q2, q3 = q
+    R_q = [[q0**2 + q1**2 - q2**2 - q3**2,
+            2 * (q1 * q2 - q0 * q3),
+            2 * (q1 * q3 + q0 * q2)],
+           [2 * (q1 * q2 + q0 * q3),
+            q0**2 - q1**2 + q2**2 - q3**2,
+            2 * (q2 * q3 - q0 * q1)],
+           [2 * (q1 * q3 - q0 * q2),
+            2 * (q2 * q3 + q0 * q1),
+            q0**2 - q1**2 - q2**2 + q3**2]]
+    return np.array(R_q)
+
+
 def fragment_vectors(i, coords):
     V0 = coords[i]
     n_unique_nodes = len(coords)
@@ -483,6 +550,8 @@ class Molecule(Atoms):
         if respect_labels:
             # Use the node_label argument directly for vf2pp_all_isomorphisms
             if not nx.is_isomorphic(self.G, other.G, node_match=lambda n1, n2: n1['label'] == n2['label']):
+                warnings.warn(
+                    "The structures are not isomorphic. Returning None.", UserWarning)
                 return None
             all_iso = nx.vf2pp_all_isomorphisms(
                 self.G, other.G, node_label='label')
@@ -493,26 +562,90 @@ class Molecule(Atoms):
 
         return all_iso
 
-    def iso_distance(self, other, iso=None):
+    def minimize_rmsd(self, other: Molecule):
+        atoms = other.copy()
+        p = atoms.get_positions()
+        p0 = self.get_positions()
+
+        # centeroids to origin
+        c = np.mean(p, axis=0)
+        p -= c
+        c0 = np.mean(p0, axis=0)
+        p0 -= c0
+
+        # Compute rotation matrix
+        R = rotation_matrix_from_points(p.T, p0.T)
+
+        atoms.translate(-c)
+        atoms.rotate(R.T)
+        atoms.translate(c0)
+
+        return atoms
+
+    def iso_distance(self, other, iso=None, method='cdist'):
         coord_1 = self.get_positions()
         coord_2 = other.get_positions()
+
+        # Check for NaN in initial coordinates
+        if np.any(np.isnan(coord_1)) or np.any(np.isnan(coord_2)):
+            warnings.warn("NaN found in initial coordinates")
+            return np.nan
+
         if iso is not None:
             coord_1 = coord_1[np.array(list(iso.keys()), dtype=int), :]
             coord_2 = coord_2[np.array(list(iso.values()), dtype=int), :]
-        # print(np.linalg.norm(cdist(coord_1, coord_1) - cdist(coord_2, coord_2)))
-        return np.linalg.norm(cdist(coord_1, coord_1) - cdist(coord_2, coord_2))
 
-    def best_mapping(self, other, limit=None):
+        if method == 'cdist':
+            distance_matrix_diff = np.linalg.norm(
+                cdist(coord_1, coord_1) - cdist(coord_2, coord_2))
+            if np.isnan(distance_matrix_diff):
+                warnings.warn("NaN found in distance matrix difference")
+            return distance_matrix_diff
+
+        # Centeroids to origin
+        c = np.mean(coord_2, axis=0)
+        coord_2 -= c
+        c0 = np.mean(coord_1, axis=0)
+        coord_1 -= c0
+
+        # Compute rotation matrix
+        R = rotation_matrix_from_points(coord_2.T, coord_1.T)
+
+        if R is None or np.any(np.isnan(R)):
+            warnings.warn("Rotation matrix computation failed or contains NaN")
+            return np.nan
+
+        coord_2 = (np.dot(coord_2, R.T) + c0)
+        coord_1 += c0
+
+        dist2 = np.sum((coord_1 - coord_2) ** 2, axis=-1)
+        # print(f'{np.max(dist2) = }\t{np.argmax(dist2) = }')
+        # print(f'{dist2} = ')
+        final_distance = np.sqrt(((coord_1 - coord_2) ** 2).mean())
+
+        if np.isnan(final_distance):
+            print("NaN found in final distance calculation")
+            print("coord_1:", coord_1)
+            print("coord_2:", coord_2)
+            print("Final distance:", final_distance)
+
+        return final_distance
+
+    def best_mapping(self, other, limit=None, method='cdist'):
         if not (self.is_isomorphic(other)):
+            warnings.warn(
+                "The structures are not isomorphic. Returning None.", UserWarning)
             return None
         isos = list(islice(self.all_mappings(other), limit))
-        return min(isos, key=lambda x: self.iso_distance(other, x))
+        return min(isos, key=lambda x: self.iso_distance(other, x, method=method))
 
-    def best_distance(self, other: Atoms, limit=None):
+    def best_distance(self, other: Atoms, limit=None, method='cdist'):
         if self.is_isomorphic(other):
-            new = other.reorder(self.best_mapping(other, limit=limit))
-            return self.iso_distance(new)
+            return self.iso_distance(other, iso=self.best_mapping(
+                other, limit=limit, method=method), method=method)
         else:
+            warnings.warn(
+                "The structures are not isomorphic. Returning None.", UserWarning)
             return np.nan
 
     def reorder(self, mapping: dict):
