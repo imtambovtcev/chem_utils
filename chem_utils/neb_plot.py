@@ -50,7 +50,7 @@ def neb_energy_from_ocra_interp(filename):
     return points, interpolation
 
 
-def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None, label=None, mode='first'):
+def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=None, ax=None, label=None, mode='first', xlabel='Distance', ylabel='Energy, eV'):
     if isinstance(file, tuple) or isinstance(file, list):
         file_interpolate, file_out = file
     else:
@@ -94,16 +94,16 @@ def neb_plot(file, show=True, save=None, title=None, sign_barriers=True, fig=Non
             case _:
                 energy_ofset = points['Energy, eV'].iloc[0]
 
-
         line1, = ax.plot(interpolation['Interp'],
                          interpolation['Energy, eV']-energy_ofset, label=label)
         line_color = line1.get_color()
-        ax.plot(points['Images'], points['Energy, eV']-energy_ofset, '.', color=line_color)
-        ax.set_xlabel('Distance')
-        ax.set_ylabel('Energy, eV')
+        ax.plot(points['Images'], points['Energy, eV'] -
+                energy_ofset, '.', color=line_color)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
 
         if label is not None:
-            plt.legend()
+            ax.legend().set_zorder(999)
         # interpolation.plot(ax=ax, x='Interp', y='Energy, eV')
         # points.plot.scatter(ax=ax, x='Images', y='Energy, eV')
 
