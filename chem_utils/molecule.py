@@ -714,7 +714,7 @@ class Molecule(Atoms):
         # Return all edges of the subgraph
         return list(subgraph.edges())
 
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None, eldens_settings=None):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, save_3d=None, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None, eldens_settings=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
@@ -728,6 +728,7 @@ class Molecule(Atoms):
             show_numbers (bool, optional): Whether to show atom indices. Defaults to False.
             show_basis_vectors (bool, optional): Whether to display the basis vectors. Defaults to True.
             save (str or bool, optional): Filepath to save the rendered image. If provided, the rendered image will be saved to this path, if bool True and no plotter provided, will create a plotter for screenshot. Defaults to None.
+            save_3d (str, optional): Filepath to save the entire scene as a 3D model. The file format is determined by the file extension. Supported formats include '.ply', '.stl', etc. Defaults to None.
             cpos (list or tuple, optional): Camera position for the PyVista plotter. Defaults to None.
             notebook (bool, optional): Whether the function is being called within a Jupyter notebook. Adjusts the rendering accordingly. Defaults to False.
             auto_close (bool, optional): Whether to automatically close the rendering window after saving or completing the rendering. Defaults to True.
@@ -977,6 +978,20 @@ class Molecule(Atoms):
             plotter.show(window_size=[1000, 1000], cpos=cpos)
             plotter.screenshot(save)
             return None
+
+        if save_3d:
+            # Combine all meshes in the plotter
+            combined_mesh = pv.PolyData()
+            # print(f'{type(plotter.renderer.actors) = }')
+            # print(f'{plotter.renderer.actors = }')
+            for actor in plotter.renderer.actors.values():
+                # print(f'{type(actor) = }')
+                # print(f'{actor = }')
+                mesh = actor.GetMapper().GetInputAsDataSet()
+                combined_mesh += pv.wrap(mesh)
+
+            # Save the combined mesh to the specified file
+            combined_mesh.save(save_3d)
 
         # If showing is required, display the visualization
         if show:
