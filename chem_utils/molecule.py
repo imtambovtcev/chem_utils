@@ -36,6 +36,12 @@ DEFAULT_ATOMS_SETTINGS['Color'] = [[int(i) for i in s.replace(
     '[', '').replace(']', '').split(',')] for s in DEFAULT_ATOMS_SETTINGS['Color']]
 
 
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    hlen = len(hex_color)
+    return tuple(int(hex_color[i:i + hlen // 3], 16) for i in range(0, hlen, hlen // 3))
+
+
 def rotation_matrix_from_points(m0, m1):
     """Returns a rigid transformation/rotation matrix that minimizes the
     RMSD between two set of points.
@@ -215,7 +221,6 @@ class Molecule(Atoms):
                 if i < j:
                     unique_bonds.append((i, j))
 
-        # print(f'{unique_bonds = }')
         self.G.add_edges_from(unique_bonds)
 
     def __delitem__(self, i):
@@ -296,9 +301,6 @@ class Molecule(Atoms):
         # Get the counts of each atom type
         self_counts = Counter(self.get_chemical_symbols())
         other_counts = Counter(other.get_chemical_symbols())
-
-        # print(f'{self_counts = }')
-        # print(f'{other_counts = }')
 
         # Check if the atom type counts are the same
         return self_counts == other_counts
@@ -441,27 +443,20 @@ class Molecule(Atoms):
         """
         from .fragment import Fragment
         small_fragment_ids = list(set(fragment_atoms_ids))
-        # print(f'{small_fragment_ids = }')
         main_fragment_ids = list(
             (set(range(len(self)))-set(small_fragment_ids)) | {fragment_attach_atom})
-        # print(f'{self.get_bonds_of(small_fragment_ids) = }')
         small_fragment_bonds = [bond for bond in self.get_bonds_of(
             small_fragment_ids) if set(bond).issubset(set(small_fragment_ids))]
-        # print(f'{small_fragment_bonds = }')
         main_fragment_bonds = [
             bond for bond in self.get_all_bonds() if bond not in small_fragment_bonds]
-        # print(f'{main_fragment_bonds = }')
         new_small_fragment_ids = dict(
             zip(small_fragment_ids, range(len(small_fragment_ids))))
-        # print(f'{new_small_fragment_ids = }')
         new_main_fragment_ids = dict(
             zip(main_fragment_ids, range(len(main_fragment_ids))))
-        # print(f'{new_main_fragment_ids = }')
         V0_s, V1_s, V2_s, V3_s = fragment_vectors(
             new_small_fragment_ids[fragment_attach_atom], self.get_positions()[small_fragment_ids, :])
         V0_m, V1_m, V2_m, V3_m = fragment_vectors(
             new_main_fragment_ids[fragment_attach_atom], self.get_positions()[main_fragment_ids, :])
-        # print(f'{set(self.get_chemical_symbols())[small_fragment_ids] = }')
 
         R_s = np.column_stack([V1_s, V2_s, V3_s])
         R_m = np.column_stack([V1_m, V2_m, V3_m])
@@ -619,8 +614,6 @@ class Molecule(Atoms):
         coord_1 += c0
 
         dist2 = np.sum((coord_1 - coord_2) ** 2, axis=-1)
-        # print(f'{np.max(dist2) = }\t{np.argmax(dist2) = }')
-        # print(f'{dist2} = ')
         final_distance = np.sqrt(((coord_1 - coord_2) ** 2).mean())
 
         if np.isnan(final_distance):
@@ -771,7 +764,6 @@ class Molecule(Atoms):
         _atoms_settings = atoms_settings.loc[symb]
 
         for position, symbol in zip(self.positions, self.get_chemical_symbols()):
-            # Ensure symbol is in the DataFrame's index
             if symbol in _atoms_settings.index:
                 settings = _atoms_settings.loc[symbol]
             else:
@@ -780,10 +772,17 @@ class Molecule(Atoms):
                 settings = _atoms_settings.loc['Unknown']
 
             if show_hydrogens or symbol != 'H':
-                sphere = pv.Sphere(
-                    radius=settings['Radius'], center=position, theta_resolution=resolution, phi_resolution=resolution)
-                plotter.add_mesh(
-                    sphere, color=settings['Color'], smooth_shading=True, opacity=alpha)
+                sphere = pv.Sphere(radius=settings['Radius'], center=position,
+                                   theta_resolution=resolution, phi_resolution=resolution)
+                color = settings['Color']
+                # Convert color to RGB array if it's not already
+                if isinstance(color, str):
+                    color = hex_to_rgb(color)
+                rgba_color = np.append(color, alpha)
+                rgba_array = np.tile(rgba_color, (sphere.n_points, 1))
+                sphere.point_data['RGBA'] = rgba_array.astype(np.uint8)
+                plotter.add_mesh(sphere, color=color,
+                                 smooth_shading=True, opacity=alpha)
 
         # Display atom numbers if required
         if atom_numbers:
@@ -857,6 +856,10 @@ class Molecule(Atoms):
                                            height=bond_length_adjusted,
                                            radius=cylinder_radius,
                                            resolution=resolution, capping=False)
+                    color = hex_to_rgb('#D3D3D3')
+                    rgba_color = np.append(color, alpha)
+                    rgba_array = np.tile(rgba_color, (cylinder.n_points, 1))
+                    cylinder.point_data['RGBA'] = rgba_array.astype(np.uint8)
                     plotter.add_mesh(cylinder, color='#D3D3D3',
                                      smooth_shading=True, opacity=alpha)
 
@@ -880,6 +883,13 @@ class Molecule(Atoms):
                                                height=bond_length_adjusted,
                                                radius=cylinder_radius,
                                                resolution=resolution, capping=False)
+
+                        color = hex_to_rgb('#D3D3D3')
+                        rgba_color = np.append(color, alpha)
+                        rgba_array = np.tile(
+                            rgba_color, (cylinder.n_points, 1))
+                        cylinder.point_data['RGBA'] = rgba_array.astype(
+                            np.uint8)
                         plotter.add_mesh(
                             cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
 
@@ -903,6 +913,12 @@ class Molecule(Atoms):
                                                height=bond_length_adjusted,
                                                radius=cylinder_radius,
                                                resolution=resolution, capping=False)
+                        color = hex_to_rgb('#D3D3D3')
+                        rgba_color = np.append(color, alpha)
+                        rgba_array = np.tile(
+                            rgba_color, (cylinder.n_points, 1))
+                        cylinder.point_data['RGBA'] = rgba_array.astype(
+                            np.uint8)
                         plotter.add_mesh(
                             cylinder, color='#D3D3D3', smooth_shading=True, opacity=alpha)
 
@@ -922,6 +938,10 @@ class Molecule(Atoms):
                                            height=bond_length_adjusted,
                                            radius=cylinder_radius,
                                            resolution=resolution, capping=False)
+                    color = hex_to_rgb('#FF0000')
+                    rgba_color = np.append(color, alpha)
+                    rgba_array = np.tile(rgba_color, (cylinder.n_points, 1))
+                    cylinder.point_data['RGBA'] = rgba_array.astype(np.uint8)
                     plotter.add_mesh(cylinder, color='#FF0000',
                                      smooth_shading=True, opacity=alpha)
 
@@ -980,18 +1000,31 @@ class Molecule(Atoms):
             return None
 
         if save_3d:
-            # Combine all meshes in the plotter
             combined_mesh = pv.PolyData()
-            # print(f'{type(plotter.renderer.actors) = }')
-            # print(f'{plotter.renderer.actors = }')
-            for actor in plotter.renderer.actors.values():
-                # print(f'{type(actor) = }')
-                # print(f'{actor = }')
-                mesh = actor.GetMapper().GetInputAsDataSet()
-                combined_mesh += pv.wrap(mesh)
 
-            # Save the combined mesh to the specified file
-            combined_mesh.save(save_3d)
+            for actor in plotter.renderer.actors.values():
+                if hasattr(actor, 'GetMapper'):
+                    mesh = actor.GetMapper().GetInputAsDataSet()
+                    if mesh.is_all_triangles:
+                        mesh = pv.wrap(mesh.extract_surface())
+
+                    if 'RGBA' in mesh.point_data:
+                        colors = mesh.point_data['RGBA']
+                        assert len(
+                            colors) == mesh.n_points, "Mismatch in the number of color points and mesh points."
+
+                        # Assign colors to mesh
+                        mesh.point_data['RGBA'] = colors.astype(np.uint8)
+
+                        # Combine the colored mesh
+                        combined_mesh += mesh
+
+            if combined_mesh.n_points > 0:
+                # Save the combined mesh with color information as a texture
+                combined_mesh.save(save_3d, texture='RGBA')
+            else:
+                warnings.warn(
+                    "No valid color data to combine, or combined_mesh is empty.")
 
         # If showing is required, display the visualization
         if show:
