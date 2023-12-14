@@ -196,7 +196,7 @@ class Path:
         l = self.find_holes()
 
         if len(l) > 0:
-            warnings.warnings.warnings.warn(
+            warnings.warn(
                 f'Linear interpolation didn\'t fix the problem. Holes:{l}')
             for hole, length in l:
                 # print(f'{hole = } {length = }')
@@ -207,7 +207,7 @@ class Path:
         l = self.find_holes()
 
         if len(l) > 0:
-            warnings.warnings.warnings.warn(
+            warnings.warn(
                 f'Problem wasn\'t fixed. Holes:{l}')
 
     def to_xyz_string(self):
