@@ -213,7 +213,7 @@ class Path:
     def to_xyz_string(self):
         return "".join([image.to_xyz_string() for image in self])
 
-    def save(self, filename):
+    def save_as_xyz(self, filename):
         with open(filename, "w") as text_file:
             text_file.write(self.to_xyz_string())
 
@@ -226,6 +226,14 @@ class Path:
     def save_as_allxyz(self, filename):
         with open(filename, "w") as text_file:
             text_file.write(self.to_allxyz_string())
+
+    def save(self, filename):
+        if filename.endswith('_all.xyz'):
+            self.save_as_allxyz(filename)
+        elif filename.endswith('.xyz'):
+            self.save_as_xyz(filename)
+        else:
+            raise ValueError("Unsupported file format")
 
     def __str__(self):
         info = [
