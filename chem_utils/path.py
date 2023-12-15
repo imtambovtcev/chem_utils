@@ -228,12 +228,12 @@ class Path:
             text_file.write(self.to_allxyz_string())
 
     def save(self, filename):
-        if filename.endswith('_all.xyz'):
+        if filename.endswith('.allxyz'):
             self.save_as_allxyz(filename)
         elif filename.endswith('.xyz'):
             self.save_as_xyz(filename)
         else:
-            raise ValueError("Unsupported file format")
+            raise ValueError(f"Unsupported file format: {filename}")
 
     def __str__(self):
         info = [
