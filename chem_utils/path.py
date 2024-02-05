@@ -196,7 +196,7 @@ class Path:
         l = self.find_holes()
 
         if len(l) > 0:
-            warnings.warnings.warnings.warn(
+            warnings.warn(
                 f'Linear interpolation didn\'t fix the problem. Holes:{l}')
             for hole, length in l:
                 # print(f'{hole = } {length = }')
@@ -207,13 +207,13 @@ class Path:
         l = self.find_holes()
 
         if len(l) > 0:
-            warnings.warnings.warnings.warn(
+            warnings.warn(
                 f'Problem wasn\'t fixed. Holes:{l}')
 
     def to_xyz_string(self):
         return "".join([image.to_xyz_string() for image in self])
 
-    def save(self, filename):
+    def save_as_xyz(self, filename):
         with open(filename, "w") as text_file:
             text_file.write(self.to_xyz_string())
 
@@ -226,6 +226,14 @@ class Path:
     def save_as_allxyz(self, filename):
         with open(filename, "w") as text_file:
             text_file.write(self.to_allxyz_string())
+
+    def save(self, filename):
+        if filename.endswith('.allxyz'):
+            self.save_as_allxyz(filename)
+        elif filename.endswith('.xyz'):
+            self.save_as_xyz(filename)
+        else:
+            raise ValueError(f"Unsupported file format: {filename}")
 
     def __str__(self):
         info = [
