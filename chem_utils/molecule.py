@@ -1107,7 +1107,7 @@ class Molecule(Atoms):
         """Convert the Motor object into a cacheable format based on atomic positions and symbols."""
         return (tuple(self.get_positions().flatten()), tuple(self.get_chemical_symbols()))
 
-    def linear_interploation(self, atoms: Atoms, n=1):
+    def linear_interpolation(self, atoms: Atoms, n: int = 1):
         from .path import Path
         path = Path([self])
         for i in range(n):

@@ -117,7 +117,17 @@ class Motor(Molecule):
             f_b['not_C_H_stator'] = f_b['stator_neighbours'][0]
         return f_b
 
-    def get_stator_rotor(self):
+    def get_stator_rotor_bond_vector(self):
+        f_b = self.get_stator_rotor_bond()
+        position_i = self.positions[f_b['bond_stator_node']]
+        position_j = self.positions[f_b['bond_rotor_node']]
+        return position_j - position_i
+
+    def get_stator_rotor_ids(self):
+        f_b = self.get_stator_rotor_bond()
+        return self.divide_in_two(f_b['bond'])
+
+    def get_stator_rotor(self, add_bond_to=None):
         f_b = self.get_stator_rotor_bond()
         stator, rotor = self.divide_in_two(f_b['bond'])
         stator = self.get_fragment(f_b['bond_stator_node'], stator)
