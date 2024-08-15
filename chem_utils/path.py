@@ -240,6 +240,9 @@ class Path:
         else:
             raise ValueError(f"Unsupported file format: {filename}")
 
+    def iso_distance(self, other: Path, *args, **kwargs) -> list[float]:
+        return [self[i].iso_distance(other[i], *args, **kwargs) for i in range(len(self))]
+
     def __str__(self):
         info = [
             f"Path Information:",
