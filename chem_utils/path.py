@@ -141,6 +141,11 @@ class Path:
         """Load images from a file and return a new Path object with those images."""
         return cls(read(filename, index=':'))
 
+    @classmethod
+    def by_linear_interpolation(cls, start: Atoms, end: Atoms, n_images: int = 1):
+        """Create a path by linearly interpolating between two images."""
+        return cls(start.linear_interpolation(end, n=n_images).images)
+
     def rotate(self):
         assert isinstance(self[0], Motor)
         zero_atom, x_atom, no_z_atom = self[0].find_rotation_atoms()
@@ -191,7 +196,7 @@ class Path:
         for hole, length in l:
             # print(f'{hole = } {length = }')
             self[hole:hole+length] = self[hole -
-                                          1].linear_interploation(self[hole+length], n=length).images
+                                          1].linear_interpolation(self[hole+length], n=length).images
 
         l = self.find_holes()
 
@@ -234,6 +239,9 @@ class Path:
             self.save_as_xyz(filename)
         else:
             raise ValueError(f"Unsupported file format: {filename}")
+
+    def iso_distance(self, other: Path, *args, **kwargs) -> list[float]:
+        return [self[i].iso_distance(other[i], *args, **kwargs) for i in range(len(self))]
 
     def __str__(self):
         info = [

@@ -23,7 +23,8 @@ scikit-learn = "^1.3.0"
 cclib = "^1.8"
 scipy = "^1.11.2"
 
-
+[tool.poetry.extras]
+qt = ["PyQt5", "pyvistaqt"]
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.0"

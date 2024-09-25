@@ -2,6 +2,13 @@ from ase.collections import g2
 from chem_utils import *
 import numpy as np
 import os
+import pathlib
+
+
+# Helper function to get the path relative to the script's directory
+def get_test_file_path(filename):
+    script_dir = pathlib.Path(__file__).resolve().parent
+    return script_dir / filename
 
 
 def test_molecule():
@@ -36,16 +43,16 @@ def test_render():
 
 
 def test_eldens():
-    ElectronDensity.load('tests/C2H4.eldens.cube')
+    ElectronDensity.load(get_test_file_path('C2H4.eldens.cube'))
 
 
 def test_eldens_render():
-    m = ElectronDensity.load('tests/C2H4.eldens.cube')
+    m = ElectronDensity.load(get_test_file_path('C2H4.eldens.cube'))
     m.render()
 
 
 def test_molecule_from_eldens():
-    m = Molecule.load_from_cube('tests/C2H4.eldens.cube')
+    m = Molecule.load_from_cube(get_test_file_path('C2H4.eldens.cube'))
     m.rotate(np.array([
         [np.cos(np.radians(45)), -np.sin(np.radians(45)), 0],
         [np.sin(np.radians(45)), np.cos(np.radians(45)), 0],
@@ -60,22 +67,24 @@ def test_molecule_from_eldens():
 
 
 def test_molecule_from_eldens_render():
-    m = Molecule.load_from_cube('tests/C2H4.eldens.cube')
+    m = Molecule.load_from_cube(get_test_file_path('C2H4.eldens.cube'))
     m.render()
 
 
 def test_molecule_save_load():
-    os.remove('tests/C6H6.xyz')
+    test_file = get_test_file_path('C6H6.xyz')
+    if os.path.exists(test_file):
+        os.remove(test_file)
     m = Molecule(g2['C6H6'])
-    m.save('tests/C6H6.xyz')
-    m = Molecule.load('tests/C6H6.xyz')
+    m.save(test_file)
+    m = Molecule.load(test_file)
     assert m.get_chemical_formula() == 'C6H6'
 
 
 def test_rotation():
     m = Molecule(g2['C2H4'])
     new_m = m.rotate_part(0, [0, 1], 90)
-    assert np.allclose(new_m.get_positions()[0],[0., 0., 0.66748])
+    assert np.allclose(new_m.get_positions()[0], [0., 0., 0.66748])
 
 
 def test_simple_bonds():

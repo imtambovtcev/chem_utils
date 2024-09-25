@@ -10,7 +10,7 @@ from .xyz_to_allxyz import xyz_to_allxyz
 from pathlib import Path
 
 
-def linear_interploation(atoms_a: ase.Atoms, atoms_b: ase.Atoms, n=1):
+def linear_interpolation(atoms_a: ase.Atoms, atoms_b: ase.Atoms, n=1):
     atoms = []
     for i in range(n):
         atoms.append(atoms_a.copy())
@@ -97,7 +97,7 @@ def check_and_copy_path(pathname, save_file):
     if len(holes) > 0:
         for hole, length in holes(bonds):
             print(f'{hole = } {length = }')
-            path[hole:hole+length] = linear_interploation(
+            path[hole:hole+length] = linear_interpolation(
                 path[hole-1], path[hole+length], n=length)
 
         bonds = find_holes(path)

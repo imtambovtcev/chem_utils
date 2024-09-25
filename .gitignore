@@ -1,4 +1,58 @@
-dist/
+# Byte-compiled / optimized / DLL files
 __pycache__/
-.coverage
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual environment
+.venv/
+env/
+ENV/
+venv/
+*.env
+*.venv
+*.virtualenv
+
+# Poetry files
 poetry.lock
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Test outputs and temporary files
+tests/test_molecule.cpython-310-*
+tests/test_orca.cpython-310-*
+
+# MacOS specific files
+.DS_Store
+
+# CSV and rendered files
+*.csv
+*.png
+
+# Logs and other temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# pytest
+.cache/
+*.pytest_cache/
+__pycache__/
+
+# Documentation
+docs/_build/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+
+.vscode/
