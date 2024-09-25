@@ -24,8 +24,7 @@ cclib = "^1.8"
 scipy = "^1.11.2"
 
 [tool.poetry.extras]
-# Define an extra group for PyQt5-related packages
-qt = ["PyQt5 = 5.14", "pyvistaqt = ^0.11.0"]
+qt = ["PyQt5", "pyvistaqt"]
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.2.0"
