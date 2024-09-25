@@ -257,7 +257,7 @@ class Molecule(Atoms):
     @classmethod
     def load(cls, filename):
         # Check if the file format is 'cube'
-        if filename.lower().endswith('.cube'):
+        if str(filename).lower().endswith('.cube'):
             # Display a warning if the format is 'cube'
             warnings.warn(
                 "To get the surface information, use the 'load_from_cube' method.")
