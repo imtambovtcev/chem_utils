@@ -3,12 +3,12 @@ from __future__ import annotations
 import io
 import math
 import pathlib
-import tkinter as tk
+
 import warnings
 from collections import Counter
 from io import BytesIO
 from itertools import islice
-from tkinter import filedialog
+
 
 import networkx as nx
 import numpy as np
@@ -732,6 +732,9 @@ class Molecule(Atoms):
         Returns:
             pv.Plotter: The PyVista plotter object with the rendered visualization.
         """
+
+        import tkinter as tk
+        from tkinter import filedialog
 
         if atoms_settings is None:
             atoms_settings = DEFAULT_ATOMS_SETTINGS
