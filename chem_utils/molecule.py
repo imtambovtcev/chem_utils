@@ -3,12 +3,10 @@ from __future__ import annotations
 import io
 import math
 import pathlib
-
 import warnings
 from collections import Counter
 from io import BytesIO
 from itertools import islice
-
 
 import networkx as nx
 import numpy as np
