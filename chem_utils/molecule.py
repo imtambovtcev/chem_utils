@@ -305,7 +305,7 @@ class Molecule(Atoms):
 
     def copy(self):
         """Return a copy of the Molecule."""
-        new_molecule = Molecule()
+        new_molecule = self.__class__()
         for key, value in self.arrays.items():
             new_molecule.arrays[key] = value.copy()
         new_molecule.set_cell(self.get_cell().copy())
