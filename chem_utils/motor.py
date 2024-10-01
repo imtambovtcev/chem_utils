@@ -81,7 +81,7 @@ class Motor(Molecule):
             # If presumed stator neighbors are not in 6-membered rings, switch stator and rotor classifications
             stator_neighbours = sorted(
                 [j for _, j in G.out_edges(bond[0]) if j != bond[1]])
-            print(f'{stator_neighbours = }')
+            print(f'{stator_neighbours=}')
             if not all(neighbor in flat_cycles_6 for neighbor in stator_neighbours):
                 bond.reverse()
 
@@ -261,6 +261,11 @@ class Motor(Molecule):
             'added_nodes': different_nodes,
             'added_edges': different_edges,
         }
+
+    def to_origin(self, zero_atom=None, x_atom=None, no_z_atom=None):
+        if all(variable is None for variable in (zero_atom, x_atom, no_z_atom)):
+            zero_atom, x_atom, no_z_atom = self.find_rotation_atoms()
+        return super().to_origin(zero_atom, x_atom, no_z_atom)
 
     def find_rotation_atoms(self, settings=None):
         if settings is None or settings['mode'] == 'default':

@@ -367,15 +367,17 @@ class Molecule(Atoms):
         - no_z_atom: to be placed to (?, ?, 0)
         """
         if all(variable is None for variable in (zero_atom, x_atom, no_z_atom)):
-            zero_atom, x_atom, no_z_atom = self.find_rotation_atoms()
+            zero_atom = 0
 
         self.translate(-self.positions[zero_atom, :])
-        rm = rotation_matrix(np.cross(self.positions[x_atom, :], [1, 0, 0]), np.arccos(
-            np.dot(self.positions[x_atom, :], [1, 0, 0])/np.linalg.norm(self.positions[x_atom, :])))
-        self.rotate(rm)
-        rm = rotation_matrix(np.array(
-            [1., 0., 0.]), -np.arctan2(self.positions[no_z_atom, 2], self.positions[no_z_atom, 1]))
-        self.rotate(rm)
+        if x_atom is not None:
+            rm = rotation_matrix(np.cross(self.positions[x_atom, :], [1, 0, 0]), np.arccos(
+                np.dot(self.positions[x_atom, :], [1, 0, 0])/np.linalg.norm(self.positions[x_atom, :])))
+            self.rotate(rm)
+        if no_z_atom is not None:
+            rm = rotation_matrix(np.array(
+                [1., 0., 0.]), -np.arctan2(self.positions[no_z_atom, 2], self.positions[no_z_atom, 1]))
+            self.rotate(rm)
 
     def rotate_part(self, atom, bond, angle):
         edge = bond if bond[0] == atom else bond[::-1]
