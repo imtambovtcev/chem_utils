@@ -1,8 +1,10 @@
+import re
+
 import numpy as np
 import pyvista as pv
-from .constants import BOHR_TO_ANGSTROM
 from scipy.interpolate import griddata
 
+from .constants import BOHR_TO_ANGSTROM
 
 DEFAULT_ELDENS_SETTINGS = {'show': True, 'isosurface_value': 0.1,
                            'show_grid_surface': False, 'show_grid_points': False}
@@ -42,72 +44,199 @@ class ElectronDensity:
 
     @staticmethod
     def _getline(cube):
-        l = cube.readline().strip().split()
-        return int(l[0]), list(map(float, l[1:]))
+        """
+        Reads a line from the cube file and parses it into appropriate types.
+        Returns a tuple where the first element is an integer (natm or grid points),
+        and the second element is a list of floats (origin or vector components).
+        """
+        parts = cube.readline().strip().split()
+        # Ensure there are parts to parse
+        if not parts:
+            raise ValueError(
+                "Unexpected end of file or empty line encountered.")
+        # Try to parse the first part as an integer
+        try:
+            first_value = int(parts[0])
+            rest_values = [float(x) for x in parts[1:]]
+            return first_value, rest_values
+        except ValueError:
+            # If parsing fails, raise an error
+            raise ValueError(
+                f"Expected an integer in the first column, got '{parts[0]}'.")
 
     @staticmethod
-    def read_cube(fname):
+    def read_cube(fname, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None, unit_conversion=None):
         """
         Reads a cube file and extracts metadata and volumetric data.
 
         Parameters:
             fname (str): Path to the cube file.
+            cube_format (str): 'ORCA' or 'GPAW', specifying the format of the cube file. Default is 'ORCA'.
+            vector_permutation (tuple): A tuple specifying the permutation of grid vectors and dimensions.
+                                        For example, (0, 1, 2) means no change, (1, 0, 2) swaps the first two.
+            axis_permutation (tuple): A tuple specifying the permutation of axes to apply to the data array.
+                                    For example, (0, 1, 2) means no change, (1, 2, 0) rearranges axes.
+            coordinate_permutation (tuple): A tuple specifying the permutation of the coordinate axes.
+                                            For example, (0, 1, 2) means no change, (1, 0, 2) swaps x and y coordinates.
 
         Returns:
             numpy.ndarray: A 3D array containing the volumetric data.
             dict: A dictionary containing metadata extracted from the cube file.
         """
+        CUBE_FORMAT_PRESETS = {
+            'ORCA': {
+                'unit_conversion': True,
+                'vector_permutation': None,
+                'axis_permutation': None,
+                'coordinate_permutation': None,
+            },
+            'GPAW': {
+                'unit_conversion': True,
+                'vector_permutation': [0, 1, 2],
+                'axis_permutation': [0, 1, 2],
+                'coordinate_permutation': [2, 1, 0],
+            },
+        }
+
+        # Apply presets based on cube_format
+        presets = CUBE_FORMAT_PRESETS.get(cube_format.upper(), {})
+        if unit_conversion is None:
+            unit_conversion = presets.get('unit_conversion', True)
+        if vector_permutation is None:
+            vector_permutation = presets.get('vector_permutation', None)
+        if axis_permutation is None:
+            axis_permutation = presets.get('axis_permutation', None)
+        if coordinate_permutation is None:
+            coordinate_permutation = presets.get(
+                'coordinate_permutation', None)
+
         meta = {}
         with open(fname, 'r') as cube:
-            cube.readline()  # Skip the first two comment lines in the cube file
-            cube.readline()
+            # Read the first two comment lines in the cube file
+            comment1 = cube.readline().strip()
+            comment2 = cube.readline().strip()
+
+            # Default loop order
+            loop_order = ['z', 'y', 'x']
+
+            if 'OUTER LOOP' in comment2:
+                # Parse the loop order
+                loop_order_line = comment2
+                # Example: 'OUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z'
+                match = re.search(
+                    r'OUTER LOOP:\s*(\w+),\s*MIDDLE LOOP:\s*(\w+),\s*INNER LOOP:\s*(\w+)', loop_order_line)
+                if match:
+                    # Loop order from outer to inner
+                    loop_order = [match.group(3).lower(), match.group(
+                        2).lower(), match.group(1).lower()]
+                else:
+                    # If parsing fails, use default
+                    pass
 
             # Read metadata: number of atoms (natm) and origin (meta['org'])
             natm, meta['org'] = ElectronDensity._getline(cube)
 
             # Read the number of points and vector information in each dimension
-            nx, meta['xvec'] = ElectronDensity._getline(cube)
-            ny, meta['yvec'] = ElectronDensity._getline(cube)
-            nz, meta['zvec'] = ElectronDensity._getline(cube)
+            grid_info = [ElectronDensity._getline(cube) for _ in range(3)]
+            nums = [n for n, vec in grid_info]
+            vecs = [vec for n, vec in grid_info]
 
-            # Convert from Bohr to Angstroms for origin and vectors
-            meta['org'] = [x * BOHR_TO_ANGSTROM for x in meta['org']]
-            meta['xvec'] = [x * BOHR_TO_ANGSTROM for x in meta['xvec']]
-            meta['yvec'] = [y * BOHR_TO_ANGSTROM for y in meta['yvec']]
-            meta['zvec'] = [z * BOHR_TO_ANGSTROM for z in meta['zvec']]
+            # Units handling
+            if unit_conversion:
+                # Convert from Bohr to Angstroms for origin and vectors
+                meta['org'] = [x * BOHR_TO_ANGSTROM for x in meta['org']]
+                vecs = [[x * BOHR_TO_ANGSTROM for x in vec] for vec in vecs]
 
-            # Extract atom information, considering the absolute value of natm, as natm can be negative for molecular orbitals
+            # Apply vector_permutation to nums and vecs
+            if vector_permutation is not None:
+                nums = [nums[i] for i in vector_permutation]
+                vecs = [vecs[i] for i in vector_permutation]
+            else:
+                # Default mapping: nums[0] -> nx, vecs[0] -> xvec, etc.
+                pass
+
+            # Assign nums and vecs to meta
+            nx, ny, nz = nums
+            meta['xvec'], meta['yvec'], meta['zvec'] = vecs
+
+            # Extract atom information, considering the absolute value of natm
+            natm_abs = abs(natm)
             meta['atoms'] = [ElectronDensity._getline(
-                cube) for _ in range(abs(natm))]
+                cube) for _ in range(natm_abs)]
 
             data_values = []
-            firstline = True
 
+            # In ORCA cube files, there may be an extra line before data that should be skipped
+            if cube_format == 'ORCA':
+                # Read the next line after the atom lines
+                line = cube.readline()
+                values_in_line = [float(val) for val in line.strip().split()]
+                if len(values_in_line) == 2:
+                    pass  # Skip this line
+                else:
+                    data_values.extend(values_in_line)
+            # Now read the data
             for line in cube:
                 values_in_line = [float(val) for val in line.strip().split()]
-                if firstline:
-                    firstline = False
-                    # If the first line contains two elements, it is considered as orbital info and skipped
-                    if len(values_in_line) == 2:
-                        continue
-                # Extend the list with the actual data values
                 data_values.extend(values_in_line)
 
             # Check if the read data points match the expected data points
-            if len(data_values) != nx * ny * nz:
+            expected_data_points = nx * ny * nz
+            if len(data_values) != expected_data_points:
                 raise ValueError(
-                    f"Number of data points in the file ({len(data_values)}) does not match the expected size ({nx * ny * nz})")
+                    f"Number of data points in the file ({len(data_values)}) does not match the expected size ({expected_data_points})")
 
-            # Reshape the 1D list of data_values to a 3D array and swap axes to match the expected orientation
-            data = np.array(data_values).reshape((nx, ny, nz))
-            data = np.swapaxes(data, 0, -1)
+            # Map axis names to dimensions
+            axes_to_dims = {'x': nx, 'y': ny, 'z': nz}
+            # Get the dimensions in the order of loop_order
+            dims = [axes_to_dims[axis] for axis in loop_order]
+            # Reshape the data_values into the dimensions in loop_order
+            data = np.array(data_values).reshape(dims)
+
+            # Now we need to rearrange axes to get data in order [x, y, z]
+            # If axis_permutation is provided, use it
+            if axis_permutation is not None:
+                data = data.transpose(axis_permutation)
+            else:
+                # Default to rearranging axes to get [x, y, z]
+                current_axes = loop_order  # axes in data after reshaping
+                desired_axes = ['x', 'y', 'z']
+                axis_permutation = [current_axes.index(
+                    axis) for axis in desired_axes]
+                data = data.transpose(axis_permutation)
+
+            # Build the coordinate grid using the origin and grid vectors
+            idx = [np.arange(n) for n in (nx, ny, nz)]
+            grid = np.meshgrid(*idx, indexing='ij')
+
+            # Compute the points in space
+            points = np.zeros((nx, ny, nz, 3))
+            for i, vec in enumerate([meta['xvec'], meta['yvec'], meta['zvec']]):
+                points += grid[i][..., None] * np.array(vec)
+
+            points += np.array(meta['org'])
+
+            # If coordinate_permutation is provided, apply it to the points
+            if coordinate_permutation is not None:
+                points = points[..., coordinate_permutation]
+                # Also permute the grid vectors and origin accordingly
+                meta['xvec'], meta['yvec'], meta['zvec'] = [meta[vec]
+                                                            for vec in ['xvec', 'yvec', 'zvec']]
+                vecs = [meta['xvec'], meta['yvec'], meta['zvec']]
+                vecs = [vecs[i] for i in coordinate_permutation]
+                meta['xvec'], meta['yvec'], meta['zvec'] = vecs
+                meta['org'] = [meta['org'][i] for i in coordinate_permutation]
+
+            # Store points in meta for further use
+            meta['points'] = points
 
         return data, meta
 
     @classmethod
-    def load(cls, cube_file_path):
+    def load(cls, cube_file_path, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
         # Read cube file and extract data and essential metadata
-        data, meta = cls.read_cube(cube_file_path)
+        data, meta = cls.read_cube(
+            cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
 
         # Return an instance of ElectronDensity initialized with data and essential metadata
         return cls(data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])

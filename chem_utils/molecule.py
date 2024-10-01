@@ -240,7 +240,8 @@ class Molecule(Atoms):
 
             # Count the number of bonds/edges connected to the node
             bond_count = self.G.degree(node)
-            assert bond_count <= atom_valency, f"Atom {node} ({atom_symbol}) has {bond_count} bonds, which exceeds its known valency of {atom_valency}!"
+            assert bond_count <= atom_valency, f"""Atom {node} ({atom_symbol})
+                has {bond_count} bonds, which exceeds its known valency of {atom_valency}!"""
 
     def update_bond_labels(self):
         self.add_valency()
@@ -269,9 +270,10 @@ class Molecule(Atoms):
         return molecule
 
     @classmethod
-    def load_from_cube(cls, cube_file_path):
+    def load_from_cube(cls, cube_file_path, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
         # Use the ElectronDensity class method to read cube file
-        data, meta = ElectronDensity.read_cube(cube_file_path)
+        data, meta = ElectronDensity.read_cube(
+            cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
 
         # Extract atoms information from meta
         atoms_info = meta['atoms']
