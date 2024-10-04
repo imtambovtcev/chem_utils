@@ -324,7 +324,8 @@ class ElectronDensity:
 
     def render(self, plotter=None, isosurface_value=0.1, isosurface_color='b', show_grid_surface=False,
                show_grid_points=False, notebook=False, opacity=0.3, grid_surface_color="b",
-               grid_points_color="r", grid_points_size=5, save=None, show=False, smooth_surface=True):
+               grid_points_color="r", grid_points_size=5, save=None, show=False, smooth_surface=True,
+               show_filtered_points=False, point_value_range=(0.0, 1.0)):
 
         if plotter is None:
             if save:
@@ -337,22 +338,46 @@ class ElectronDensity:
         x, y, z = self.points.T.reshape(3, nx, ny, nz)
         grid = pv.StructuredGrid(x, y, z)
 
+        # Display isosurface
         if isosurface_value is not None:
             contour = grid.contour(
                 scalars=self.electron_density.ravel(), isosurfaces=[isosurface_value])
             if smooth_surface:
                 contour = contour.subdivide(nsub=2, subfilter='loop')
                 contour = contour.smooth(n_iter=50)
-
             plotter.add_mesh(contour, color=isosurface_color,
                              opacity=opacity, show_scalar_bar=False)
 
+        # Display grid surface
         if show_grid_surface:
             plotter.add_mesh(grid.outline(), color=grid_surface_color)
 
+        # Display grid points
         if show_grid_points:
             plotter.add_mesh(grid, style='points', point_size=grid_points_size,
                              color=grid_points_color, render_points_as_spheres=True)
+
+        # Display filtered points based on value range
+        if show_filtered_points:
+            # Flatten the points array to correspond with the flattened electron_density
+            nx, ny, nz = self.dimensions
+            # Reshape points to (N, 3) where N = nx * ny * nz
+            points_flattened = self.points.reshape(-1, 3)
+
+            # Flatten the electron_density array and create the boolean mask
+            electron_density = self.electron_density.ravel()
+            points_in_range = (electron_density >= point_value_range[0]) & (
+                electron_density <= point_value_range[1])
+
+            # Apply the boolean mask to select the points within the value range
+            selected_points = points_flattened[points_in_range]
+
+            # If there are points in the range, show them
+            if len(selected_points) > 0:
+                plotter.add_points(selected_points, color=grid_points_color,
+                                   point_size=grid_points_size, render_points_as_spheres=True)
+            else:
+                print(f"No points found in the range {point_value_range}")
 
         # If saving is required, save the screenshot
         if isinstance(save, str):
