@@ -24,7 +24,7 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 from .constants import BOHR_TO_ANGSTROM
-from .eldens import ElectronDensity
+from .scalar_field import ScalarField
 from .valency import add_valency, general_print, rebond
 
 DEFAULT_ATOMS_SETTINGS = pd.read_csv(
@@ -272,7 +272,7 @@ class Molecule(Atoms):
     @classmethod
     def load_from_cube(cls, cube_file_path, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
         # Use the ElectronDensity class method to read cube file
-        data, meta = ElectronDensity.read_cube(
+        data, meta = ScalarField.read_cube(
             cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
 
         # Extract atoms information from meta
@@ -285,7 +285,7 @@ class Molecule(Atoms):
         molecule = cls(numbers=numbers, positions=positions)
 
         # Create an ElectronDensity instance and assign it to the molecule's electron_density attribute
-        molecule.electron_density = ElectronDensity(
+        molecule.electron_density = ScalarField(
             data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
 
         return molecule

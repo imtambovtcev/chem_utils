@@ -6,20 +6,20 @@ from scipy.interpolate import griddata
 
 from .constants import BOHR_TO_ANGSTROM
 
-DEFAULT_ELDENS_SETTINGS = {'show': True, 'isosurface_value': 0.1,
-                           'show_grid_surface': False, 'show_grid_points': False}
+DEFAULT_SCALAR_FIELD_SETTINGS = {'show': True, 'isosurface_value': 0.1,
+                                 'show_grid_surface': False, 'show_grid_points': False}
 
 
-class ElectronDensity:
-    def __init__(self, electron_density, org, xvec, yvec, zvec):
-        self.electron_density = electron_density
+class ScalarField:
+    def __init__(self, scalar_field, org, xvec, yvec, zvec):
+        self.scalar_field = scalar_field
         self.org = np.array(org)
         self.xvec = np.array(xvec)
         self.yvec = np.array(yvec)
         self.zvec = np.array(zvec)
 
-        # Derive points and dimensions from electron_density
-        nx, ny, nz = self.electron_density.shape
+        # Derive points and dimensions from scalar_field
+        nx, ny, nz = self.scalar_field.shape
         self.dimensions = [nx, ny, nz]
 
     @property
@@ -134,10 +134,10 @@ class ElectronDensity:
                     pass
 
             # Read metadata: number of atoms (natm) and origin (meta['org'])
-            natm, meta['org'] = ElectronDensity._getline(cube)
+            natm, meta['org'] = ScalarField._getline(cube)
 
             # Read the number of points and vector information in each dimension
-            grid_info = [ElectronDensity._getline(cube) for _ in range(3)]
+            grid_info = [ScalarField._getline(cube) for _ in range(3)]
             nums = [n for n, vec in grid_info]
             vecs = [vec for n, vec in grid_info]
 
@@ -161,7 +161,7 @@ class ElectronDensity:
 
             # Extract atom information, considering the absolute value of natm
             natm_abs = abs(natm)
-            meta['atoms'] = [ElectronDensity._getline(
+            meta['atoms'] = [ScalarField._getline(
                 cube) for _ in range(natm_abs)]
 
             data_values = []
@@ -249,11 +249,11 @@ class ElectronDensity:
             ElectronDensity: A new instance of ElectronDensity with the same attributes as the original.
         """
         # Create a new instance of ElectronDensity with the same attributes as the original instance
-        return ElectronDensity(np.copy(self.electron_density),
-                               np.copy(self.org),
-                               np.copy(self.xvec),
-                               np.copy(self.yvec),
-                               np.copy(self.zvec))
+        return ScalarField(np.copy(self.scalar_field),
+                           np.copy(self.org),
+                           np.copy(self.xvec),
+                           np.copy(self.yvec),
+                           np.copy(self.zvec))
 
     def rotate(self, rotation_matrix):
         assert rotation_matrix.shape == (
@@ -286,8 +286,8 @@ class ElectronDensity:
         # Get the points and values from the 'self' instance
         # Coordinates of the points in the 'self' grid
         points_self = self.points.reshape(-1, 3)
-        # Electron density values at the points in the 'self' grid
-        values_self = self.electron_density.ravel()
+        # scalar field values at the points in the 'self' grid
+        values_self = self.scalar_field.ravel()
 
         # Get the points from the 'target' instance
         # Coordinates of the points in the 'target' grid
@@ -297,30 +297,30 @@ class ElectronDensity:
         values_target = griddata(
             points_self, values_self, points_target, method=method, fill_value=0.0)
 
-        # Reshape the interpolated values to match the shape of the target's electron_density
-        values_target = values_target.reshape(target.electron_density.shape)
+        # Reshape the interpolated values to match the shape of the target's scalar_field
+        values_target = values_target.reshape(target.scalar_field.shape)
 
         # Return a new ElectronDensity instance with the interpolated values and the meta of the 'target' instance
-        return ElectronDensity(values_target, target.org, target.xvec, target.yvec, target.zvec)
+        return ScalarField(values_target, target.org, target.xvec, target.yvec, target.zvec)
 
     def subtract(self, other, method='nearest'):
         """
-        Subtracts the electron density of another ElectronDensity instance from this instance.
+        Subtracts the scalar field of another ElectronDensity instance from this instance.
 
         :param other: Another ElectronDensity instance
         :return: A new ElectronDensity instance representing the difference
         """
         # Check if other is an instance of ElectronDensity
-        if not isinstance(other, ElectronDensity):
+        if not isinstance(other, ScalarField):
             raise TypeError(
                 "The 'other' parameter must be an instance of ElectronDensity.")
 
         # Resample 'other' instance to 'self' instance
         other_resampled = other.resample_to(self, method=method)
 
-        # Calculate the difference of the electron densities and create a new instance
-        difference = self.electron_density - other_resampled.electron_density
-        return ElectronDensity(difference, self.org, self.xvec, self.yvec, self.zvec)
+        # Calculate the difference of the scalar fields and create a new instance
+        difference = self.scalar_field - other_resampled.scalar_field
+        return ScalarField(difference, self.org, self.xvec, self.yvec, self.zvec)
 
     def render(self, plotter=None, isosurface_value=0.1, isosurface_color='b', show_grid_surface=False,
                show_grid_points=False, notebook=False, opacity=0.3, grid_surface_color="b",
@@ -341,7 +341,7 @@ class ElectronDensity:
         # Display isosurface
         if isosurface_value is not None:
             contour = grid.contour(
-                scalars=self.electron_density.ravel(), isosurfaces=[isosurface_value])
+                scalars=self.scalar_field.ravel(), isosurfaces=[isosurface_value])
             if smooth_surface:
                 contour = contour.subdivide(nsub=2, subfilter='loop')
                 contour = contour.smooth(n_iter=50)
@@ -359,15 +359,15 @@ class ElectronDensity:
 
         # Display filtered points based on value range
         if show_filtered_points:
-            # Flatten the points array to correspond with the flattened electron_density
+            # Flatten the points array to correspond with the flattened scalar_field
             nx, ny, nz = self.dimensions
             # Reshape points to (N, 3) where N = nx * ny * nz
             points_flattened = self.points.reshape(-1, 3)
 
-            # Flatten the electron_density array and create the boolean mask
-            electron_density = self.electron_density.ravel()
-            points_in_range = (electron_density >= point_value_range[0]) & (
-                electron_density <= point_value_range[1])
+            # Flatten the scalar_field array and create the boolean mask
+            scalar_field = self.scalar_field.ravel()
+            points_in_range = (scalar_field >= point_value_range[0]) & (
+                scalar_field <= point_value_range[1])
 
             # Apply the boolean mask to select the points within the value range
             selected_points = points_flattened[points_in_range]
@@ -402,16 +402,16 @@ class ElectronDensity:
         info.append(f"Yvec: {self.yvec}")
         info.append(f"Zvec: {self.zvec}")
 
-        # Find the maximum value of electron density and its coordinates
-        max_density_idx = np.argmax(self.electron_density)
-        max_density_value = self.electron_density.ravel()[max_density_idx]
+        # Find the maximum value of scalar field and its coordinates
+        max_density_idx = np.argmax(self.scalar_field)
+        max_density_value = self.scalar_field.ravel()[max_density_idx]
         max_density_coords = np.unravel_index(
-            max_density_idx, self.electron_density.shape)
+            max_density_idx, self.scalar_field.shape)
         max_density_point = self.points.reshape(
             *self.dimensions, 3)[max_density_coords]
 
-        info.append(f"Maximum Electron Density Value: {max_density_value}")
+        info.append(f"Maximum scalar field Value: {max_density_value}")
         info.append(
-            f"Coordinates of Maximum Electron Density: {max_density_point}")
+            f"Coordinates of Maximum scalar field: {max_density_point}")
 
         return '\n'.join(info)

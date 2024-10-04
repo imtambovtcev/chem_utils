@@ -3,7 +3,7 @@ from .fragment import Fragment
 from .motor import Motor
 from .path import Path
 from .frequency import Frequency
-from .eldens import ElectronDensity
+from .scalar_field import ScalarField
 from .spectrum import Spectrum
 from .constants import *
 

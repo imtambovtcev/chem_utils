@@ -43,11 +43,11 @@ def test_render():
 
 
 def test_eldens():
-    ElectronDensity.load(get_test_file_path('C2H4.eldens.cube'))
+    ScalarField.load(get_test_file_path('C2H4.eldens.cube'))
 
 
 def test_eldens_render():
-    m = ElectronDensity.load(get_test_file_path('C2H4.eldens.cube'))
+    m = ScalarField.load(get_test_file_path('C2H4.eldens.cube'))
     m.render()
 
 
