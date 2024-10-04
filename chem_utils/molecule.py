@@ -200,7 +200,7 @@ def rotation_matrix(axis, theta):
 class Molecule(Atoms):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.electron_density = None  # Placeholder for the ElectronDensity object
+        self.scalar_fields = {}  # Placeholder for the ScalarField objects
         self.reinit()
 
     def reinit(self):
@@ -270,7 +270,7 @@ class Molecule(Atoms):
         return molecule
 
     @classmethod
-    def load_from_cube(cls, cube_file_path, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
+    def load_from_cube(cls, cube_file_path, cube_format='ORCA', name='Electron density', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
         # Use the ElectronDensity class method to read cube file
         data, meta = ScalarField.read_cube(
             cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
@@ -284,8 +284,8 @@ class Molecule(Atoms):
         # Create a Molecule instance with the extracted atomic numbers and positions
         molecule = cls(numbers=numbers, positions=positions)
 
-        # Create an ElectronDensity instance and assign it to the molecule's electron_density attribute
-        molecule.electron_density = ScalarField(
+        # Create an ScalarField instance and adds it to the molecule's scalar_fields dictionary
+        molecule.scalar_fields[name] = ScalarField(
             data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
 
         return molecule
@@ -313,8 +313,8 @@ class Molecule(Atoms):
         new_molecule.set_cell(self.get_cell().copy())
         new_molecule.set_pbc(self.get_pbc().copy())
         new_molecule.info = self.info.copy()
-        if self.electron_density is not None:
-            new_molecule.electron_density = self.electron_density.copy()
+        for key, value in self.scalar_fields.items():
+            new_molecule.scalar_fields[key] = value.copy()
         return new_molecule
 
     def extend(self, atoms):
@@ -343,8 +343,8 @@ class Molecule(Atoms):
         assert len(
             translation_vector) == 3, "Translation vector must be a 1x3 vector."
         self.positions += translation_vector  # Translate each point
-        if self.electron_density is not None:
-            self.electron_density.translate(translation_vector)
+        for field in self.scalar_fields.values():
+            field.translate(translation_vector)
 
     def rotate(self, rotation_matrix):
         """
@@ -356,8 +356,8 @@ class Molecule(Atoms):
             3, 3), "Rotation matrix must be a 3x3 matrix."
         # Rotate each point
         self.positions = np.dot(self.positions, rotation_matrix.T)
-        if self.electron_density is not None:
-            self.electron_density.rotate(rotation_matrix)
+        for field in self.scalar_fields.values():
+            field.rotate(rotation_matrix)
 
     def to_origin(self, zero_atom=None, x_atom=None, no_z_atom=None):
         """
@@ -709,7 +709,7 @@ class Molecule(Atoms):
         # Return all edges of the subgraph
         return list(subgraph.edges())
 
-    def render(self, plotter: pv.Plotter = None, show=False, save=None, save_3d=None, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None, eldens_settings=None):
+    def render(self, plotter: pv.Plotter = None, show=False, save=None, save_3d=None, atoms_settings=None, show_hydrogens=True, alpha=1.0, atom_numbers=False, show_hydrogen_bonds=False, show_numbers=False, show_basis_vectors=False, cpos=None, notebook=False, auto_close=True, interactive=True, background_color='black', valency=False, resolution=20,  light_settings=None, mode=None, scalar_fields_settings=None):
         """
         Renders a 3D visualization of a molecule using the given settings.
 
@@ -950,16 +950,33 @@ class Molecule(Atoms):
                     plotter.add_mesh(cylinder, color='#FF0000',
                                      smooth_shading=True, opacity=alpha)
 
-        if self.electron_density is not None and eldens_settings is not None and ('show' not in eldens_settings.keys() or eldens_settings['show']):
-            # if eldens_settings is None:
-            #     eldens_settings = DEFAULT_ELDENS_SETTINGS
-            # Read the cube file and create a structured grid
-            _eldens_settings = eldens_settings.copy()
-            _eldens_settings['plotter'] = plotter
-            _eldens_settings['save'] = False
-            _eldens_settings['show'] = False
-            _eldens_settings['notebook'] = notebook
-            self.electron_density.render(**_eldens_settings)
+        if scalar_fields_settings is not None:
+            def render_scalar_field(scalar_field, settings):
+                _settings = settings.copy()
+                _settings['plotter'] = plotter
+                _settings['save'] = False
+                _settings['show'] = False
+                _settings['notebook'] = notebook
+                scalar_field.render(**_settings)
+
+            assert isinstance(
+                scalar_fields_settings, dict), "scalar_fields_settings must be a dictionary."
+            if len(self.scalar_fields) > 0:
+                if len(scalar_fields_settings) > 0 and set(scalar_fields_settings.keys()).issubset(set(self.scalar_fields.keys())):
+                    # Individual settings for each scalar field
+                    print("Rendering individual scalar fields.")
+                    print(f"{scalar_fields_settings.keys()=}")
+                    print(f'{self.scalar_fields.keys()=}')
+                    for scalar_field_name, scalar_field_settings in scalar_fields_settings.items():
+                        render_scalar_field(
+                            self.scalar_fields[scalar_field_name], scalar_field_settings)
+                else:
+                    # Default settings for all scalar fields
+                    for scalar_field in self.scalar_fields.values():
+                        render_scalar_field(
+                            scalar_field, scalar_fields_settings)
+            else:
+                warnings.warn('There are no scalar fields to render.')
 
         if show_basis_vectors:
             origin = np.array([0, 0, 0])
