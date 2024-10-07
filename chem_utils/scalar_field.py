@@ -2,7 +2,7 @@ import re
 
 import numpy as np
 import pyvista as pv
-from scipy.interpolate import griddata
+from scipy.interpolate import RegularGridInterpolator, griddata
 
 from .constants import BOHR_TO_ANGSTROM
 
@@ -322,6 +322,47 @@ class ScalarField:
         difference = self.scalar_field - other_resampled.scalar_field
         return ScalarField(difference, self.org, self.xvec, self.yvec, self.zvec)
 
+    def scalar_field_along_line(self, start_point, end_point, num_points=100) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Extracts scalar field values along a line between two points in space.
+
+        Parameters:
+            start_point (array-like): Starting point of the line in 3D space.
+            end_point (array-like): Ending point of the line in 3D space.
+            num_points (int): Number of points along the line at which to sample the scalar field.
+
+        Returns:
+            tuple: A tuple containing:
+                - line_points: The sampled points along the line.
+                - line_values: The scalar field values at each of these points.
+        """
+
+        # Ensure points are in the correct format
+        start_point = np.array(start_point)
+        end_point = np.array(end_point)
+
+        # Generate the points along the line
+        line_points = np.linspace(start_point, end_point, num_points)
+
+        # Prepare grid data for interpolation
+        nx, ny, nz = self.dimensions
+        x = np.linspace(0, nx - 1, nx)
+        y = np.linspace(0, ny - 1, ny)
+        z = np.linspace(0, nz - 1, nz)
+
+        # Create the interpolator
+        interpolator = RegularGridInterpolator(
+            (x, y, z), self.scalar_field, bounds_error=False, fill_value=0)
+
+        # Transform line_points to the scalar field's coordinate space
+        transformed_points = (
+            line_points - self.org) @ np.linalg.inv(np.array([self.xvec, self.yvec, self.zvec]))
+
+        # Sample the scalar field along the transformed line points
+        line_values = interpolator(transformed_points)
+
+        return line_points, line_values
+
     def render(self, plotter=None, isosurface_value=0.1, isosurface_color='b', show_grid_surface=False,
                show_grid_points=False, notebook=False, opacity=0.3, grid_surface_color="b",
                grid_points_color="r", grid_points_size=5, save=None, show=False, smooth_surface=True,
@@ -342,11 +383,28 @@ class ScalarField:
         if isosurface_value is not None:
             contour = grid.contour(
                 scalars=self.scalar_field.ravel(), isosurfaces=[isosurface_value])
-            if smooth_surface:
-                contour = contour.subdivide(nsub=2, subfilter='loop')
-                contour = contour.smooth(n_iter=50)
-            plotter.add_mesh(contour, color=isosurface_color,
-                             opacity=opacity, show_scalar_bar=False)
+            try:
+                if smooth_surface:
+                    contour = contour.subdivide(nsub=2, subfilter='loop')
+                    contour = contour.smooth(n_iter=50)
+                plotter.add_mesh(contour, color=isosurface_color,
+                                 opacity=opacity, show_scalar_bar=False)
+            except pv.core.errors.NotAllTrianglesError as e:
+                # Calculate mean and standard deviation of scalar field
+                mean_value = np.mean(self.scalar_field)
+                std_dev = np.std(self.scalar_field)
+                print(f"Error: Input mesh for subdivision must be all triangles.")
+                print(f"Your isovalue ({
+                      isosurface_value}) may be far from the scalar field distribution.")
+                print(f"Mean value of scalar field: {mean_value}")
+                print(f"Standard deviation of scalar field: {std_dev}")
+                mean_value = np.mean(np.abs(self.scalar_field))
+                std_dev = np.std(np.abs(self.scalar_field))
+                print(f"Mean value of absolute scalar field: {mean_value}")
+                print(
+                    f"Standard deviation of absolute scalar field: {std_dev}")
+
+                raise e  # Re-raise the exception to fail the run
 
         # Display grid surface
         if show_grid_surface:
