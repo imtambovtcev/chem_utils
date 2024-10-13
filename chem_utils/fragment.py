@@ -7,7 +7,7 @@ from ase import Atoms
 from .molecule import Molecule, fragment_vectors
 
 
-def add_vector_to_plotter(p, r0, v, color='blue'):
+def add_vector_to_plotter(p, r0, v, color='blue', scale_factor=1.0):
     # Create a single point from the origin
     points = pv.PolyData(r0)
 
@@ -15,9 +15,9 @@ def add_vector_to_plotter(p, r0, v, color='blue'):
     # Making sure the vector is a 2D array with shape (n_points, 3)
     points['Vectors'] = np.array([v])
 
-    # Generate arrows
-    arrows = points.glyph(orient='Vectors', scale=False,
-                          factor=1.0, geom=pv.Arrow())
+    # Generate arrows with scaling factor
+    arrows = points.glyph(orient='Vectors', scale=True,
+                          factor=scale_factor, geom=pv.Arrow())
 
     # Add arrows to the plotter
     p.add_mesh(arrows, color=color)
@@ -105,9 +105,9 @@ class Fragment(Molecule):
         if plotter is None:
             plotter = pv.Plotter(notebook=notebook)
         V0, V1, V2, V3 = self.fragment_vectors
-        add_vector_to_plotter(plotter, V0, V1, color='red')
-        add_vector_to_plotter(plotter, V0, V2, color='green')
-        add_vector_to_plotter(plotter, V0, V3, color='blue')
+        add_vector_to_plotter(plotter, V0, V1, color='red', scale_factor=1.0)
+        add_vector_to_plotter(plotter, V0, V2, color='green', scale_factor=0.7)
+        add_vector_to_plotter(plotter, V0, V3, color='blue', scale_factor=0.7)
         return plotter
 
     def apply_transition(self, r0):
