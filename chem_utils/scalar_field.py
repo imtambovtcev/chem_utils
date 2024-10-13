@@ -42,6 +42,28 @@ class ScalarField:
 
         return points
 
+    @property
+    def volume_element(self):
+        """
+        Computes the volume element, which is the volume represented by each grid cell.
+
+        Returns:
+            float: The volume of a single grid cell in the scalar field.
+        """
+        # Calculate the volume element as the scalar triple product of the grid vectors
+        return np.abs(np.dot(self.xvec, np.cross(self.yvec, self.zvec)))
+
+    @property
+    def volume_size(self):
+        """
+        Computes the total volume represented by the scalar field.
+
+        Returns:
+            float: The total volume of the scalar field.
+        """
+        # Calculate the total volume as the volume element times the number of grid cells
+        return self.volume_element * np.prod(self.dimensions)
+
     @staticmethod
     def _getline(cube):
         """
@@ -394,8 +416,8 @@ class ScalarField:
                 mean_value = np.mean(self.scalar_field)
                 std_dev = np.std(self.scalar_field)
                 print(f"Error: Input mesh for subdivision must be all triangles.")
-                print(f"Your isovalue ({
-                      isosurface_value}) may be far from the scalar field distribution.")
+                print(
+                    f"Your isovalue({isosurface_value}) may be far from the scalar field distribution.")
                 print(f"Mean value of scalar field: {mean_value}")
                 print(f"Standard deviation of scalar field: {std_dev}")
                 mean_value = np.mean(np.abs(self.scalar_field))
