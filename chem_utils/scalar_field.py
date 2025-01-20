@@ -11,36 +11,53 @@ DEFAULT_SCALAR_FIELD_SETTINGS = {'show': True, 'isosurface_value': 0.1,
 
 
 class ScalarField:
-    def __init__(self, scalar_field, org, xvec, yvec, zvec):
+    def __init__(self, scalar_field, org, lat1, lat2, lat3):
+        """
+         self.scalar_field: 3D numpy array representing the scalar field, outermost dimension corresponds to x-axis, middle dimension corresponds to y-axis, and innermost dimension corresponds to z-axis if loaded from standard cube file.
+        """
+
         self.scalar_field = scalar_field
         self.org = np.array(org)
-        self.xvec = np.array(xvec)
-        self.yvec = np.array(yvec)
-        self.zvec = np.array(zvec)
+
+        self.lat1 = np.array(lat1)
+        self.lat2 = np.array(lat2)
+        self.lat3 = np.array(lat3)
 
         # Derive points and dimensions from scalar_field
-        nx, ny, nz = self.scalar_field.shape
-        self.dimensions = [nx, ny, nz]
+        n1, n2, n3 = self.scalar_field.shape
+        self.dimensions = [n1, n2, n3]
 
     @property
     def points(self):
-        nx, ny, nz = self.dimensions
+        # Generate grid indices for each dimension
+        indices = np.indices(self.dimensions)
+        i, j, k = indices[0], indices[1], indices[2]
 
-        x_indices = np.linspace(0, nx - 1, nx)[:, None, None, None]
-        y_indices = np.linspace(0, ny - 1, ny)[None, :, None, None]
-        z_indices = np.linspace(0, nz - 1, nz)[None, None, :, None]
-
-        # For each point in the grid, compute its coordinates by adding the contributions of the xvec, yvec, zvec, and the origin
-        points = (self.org[None, None, None, :]
-                  + x_indices * self.xvec[None, None, None, :]
-                  + y_indices * self.yvec[None, None, None, :]
-                  + z_indices * self.zvec[None, None, None, :])
-
-        points = points.reshape(nx, ny, nz, 3)
-
-        points = np.swapaxes(points, 0, 2)
-
+        # Compute coordinates for each point in the scalar field
+        points = (
+            self.org +
+            i[..., np.newaxis] * self.lat1 +
+            j[..., np.newaxis] * self.lat2 +
+            k[..., np.newaxis] * self.lat3
+        )
         return points
+
+    @property
+    def volume_element(self):
+        """
+        Computes the volume element, which is the volume represented by each grid cell.
+
+        Returns:
+            float: The volume of a single grid cell in the scalar field.
+        """
+        # Calculate the volume element as the scalar triple product of the grid vectors
+        assert abs(abs(self.lat1[0])-np.linalg.norm(self.lat1)
+                   ) < 1e-6, "lat1 is not parallel to the x-axis"
+        assert abs(abs(self.lat2[1])-np.linalg.norm(self.lat2)
+                   < 1e-6), "lat2 is not parallel to the y-axis"
+        assert abs(abs(self.lat3[2])-np.linalg.norm(self.lat3)
+                   < 1e-6), "lat3 is not parallel to the z-axis"
+        return np.array([self.lat1[0], self.lat2[1], self.lat3[2]])
 
     @staticmethod
     def _getline(cube):
@@ -65,73 +82,18 @@ class ScalarField:
                 f"Expected an integer in the first column, got '{parts[0]}'.")
 
     @staticmethod
-    def read_cube(fname, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None, unit_conversion=None):
+    def read_cube(fname, unit_conversion=True):
         """
         Reads a cube file and extracts metadata and volumetric data.
-
-        Parameters:
-            fname (str): Path to the cube file.
-            cube_format (str): 'ORCA' or 'GPAW', specifying the format of the cube file. Default is 'ORCA'.
-            vector_permutation (tuple): A tuple specifying the permutation of grid vectors and dimensions.
-                                        For example, (0, 1, 2) means no change, (1, 0, 2) swaps the first two.
-            axis_permutation (tuple): A tuple specifying the permutation of axes to apply to the data array.
-                                    For example, (0, 1, 2) means no change, (1, 2, 0) rearranges axes.
-            coordinate_permutation (tuple): A tuple specifying the permutation of the coordinate axes.
-                                            For example, (0, 1, 2) means no change, (1, 0, 2) swaps x and y coordinates.
-
-        Returns:
-            numpy.ndarray: A 3D array containing the volumetric data.
-            dict: A dictionary containing metadata extracted from the cube file.
         """
-        CUBE_FORMAT_PRESETS = {
-            'ORCA': {
-                'unit_conversion': True,
-                'vector_permutation': None,
-                'axis_permutation': None,
-                'coordinate_permutation': None,
-            },
-            'GPAW': {
-                'unit_conversion': True,
-                'vector_permutation': [0, 1, 2],
-                'axis_permutation': [0, 1, 2],
-                'coordinate_permutation': [2, 1, 0],
-            },
-        }
-
-        # Apply presets based on cube_format
-        presets = CUBE_FORMAT_PRESETS.get(cube_format.upper(), {})
-        if unit_conversion is None:
-            unit_conversion = presets.get('unit_conversion', True)
-        if vector_permutation is None:
-            vector_permutation = presets.get('vector_permutation', None)
-        if axis_permutation is None:
-            axis_permutation = presets.get('axis_permutation', None)
-        if coordinate_permutation is None:
-            coordinate_permutation = presets.get(
-                'coordinate_permutation', None)
-
         meta = {}
         with open(fname, 'r') as cube:
             # Read the first two comment lines in the cube file
             comment1 = cube.readline().strip()
             comment2 = cube.readline().strip()
 
-            # Default loop order
-            loop_order = ['z', 'y', 'x']
-
-            if 'OUTER LOOP' in comment2:
-                # Parse the loop order
-                loop_order_line = comment2
-                # Example: 'OUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z'
-                match = re.search(
-                    r'OUTER LOOP:\s*(\w+),\s*MIDDLE LOOP:\s*(\w+),\s*INNER LOOP:\s*(\w+)', loop_order_line)
-                if match:
-                    # Loop order from outer to inner
-                    loop_order = [match.group(3).lower(), match.group(
-                        2).lower(), match.group(1).lower()]
-                else:
-                    # If parsing fails, use default
-                    pass
+            # Default loop order is now 'xyz'
+            loop_order = ['x', 'y', 'z']
 
             # Read metadata: number of atoms (natm) and origin (meta['org'])
             natm, meta['org'] = ScalarField._getline(cube)
@@ -141,105 +103,64 @@ class ScalarField:
             nums = [n for n, vec in grid_info]
             vecs = [vec for n, vec in grid_info]
 
-            # Units handling
-            if unit_conversion:
-                # Convert from Bohr to Angstroms for origin and vectors
-                meta['org'] = [x * BOHR_TO_ANGSTROM for x in meta['org']]
-                vecs = [[x * BOHR_TO_ANGSTROM for x in vec] for vec in vecs]
-
-            # Apply vector_permutation to nums and vecs
-            if vector_permutation is not None:
-                nums = [nums[i] for i in vector_permutation]
-                vecs = [vecs[i] for i in vector_permutation]
-            else:
-                # Default mapping: nums[0] -> nx, vecs[0] -> xvec, etc.
-                pass
-
             # Assign nums and vecs to meta
-            nx, ny, nz = nums
-            meta['xvec'], meta['yvec'], meta['zvec'] = vecs
+            n1, n2, n3 = nums
 
             # Extract atom information, considering the absolute value of natm
             natm_abs = abs(natm)
-            meta['atoms'] = [ScalarField._getline(
-                cube) for _ in range(natm_abs)]
+
+            def format_atom(atom):
+                return (atom[0], np.array(atom[1])[1:])
+            meta['atoms'] = [format_atom(ScalarField._getline(
+                cube)) for _ in range(natm_abs)]
+
+            # Units handling
+            if unit_conversion:
+                # Convert from Bohr to Angstroms for origin and vectors
+                def convert_atom(atom, factor):
+                    return (atom[0], [x * factor for x in atom[1]])
+                meta['atoms'] = [convert_atom(
+                    atom, BOHR_TO_ANGSTROM) for atom in meta['atoms']]
+                meta['org'] = [x * BOHR_TO_ANGSTROM for x in meta['org']]
+                vecs = [[x * BOHR_TO_ANGSTROM for x in vec] for vec in vecs]
+
+            meta['lat1'], meta['lat2'], meta['lat3'] = vecs
 
             data_values = []
 
-            # In ORCA cube files, there may be an extra line before data that should be skipped
-            if cube_format == 'ORCA':
-                # Read the next line after the atom lines
-                line = cube.readline()
-                values_in_line = [float(val) for val in line.strip().split()]
-                if len(values_in_line) == 2:
-                    pass  # Skip this line
-                else:
-                    data_values.extend(values_in_line)
-            # Now read the data
+            # Skip extra line for ORCA files
+
+            line = cube.readline()
+            values_in_line = [float(val) for val in line.strip().split()]
+            if len(values_in_line) == 2:
+                pass
+            else:
+                data_values.extend(values_in_line)
+
             for line in cube:
                 values_in_line = [float(val) for val in line.strip().split()]
                 data_values.extend(values_in_line)
 
             # Check if the read data points match the expected data points
-            expected_data_points = nx * ny * nz
+            expected_data_points = n1 * n2 * n3
             if len(data_values) != expected_data_points:
                 raise ValueError(
                     f"Number of data points in the file ({len(data_values)}) does not match the expected size ({expected_data_points})")
 
             # Map axis names to dimensions
-            axes_to_dims = {'x': nx, 'y': ny, 'z': nz}
-            # Get the dimensions in the order of loop_order
+            axes_to_dims = {'x': n1, 'y': n2, 'z': n3}
             dims = [axes_to_dims[axis] for axis in loop_order]
-            # Reshape the data_values into the dimensions in loop_order
             data = np.array(data_values).reshape(dims)
-
-            # Now we need to rearrange axes to get data in order [x, y, z]
-            # If axis_permutation is provided, use it
-            if axis_permutation is not None:
-                data = data.transpose(axis_permutation)
-            else:
-                # Default to rearranging axes to get [x, y, z]
-                current_axes = loop_order  # axes in data after reshaping
-                desired_axes = ['x', 'y', 'z']
-                axis_permutation = [current_axes.index(
-                    axis) for axis in desired_axes]
-                data = data.transpose(axis_permutation)
-
-            # Build the coordinate grid using the origin and grid vectors
-            idx = [np.arange(n) for n in (nx, ny, nz)]
-            grid = np.meshgrid(*idx, indexing='ij')
-
-            # Compute the points in space
-            points = np.zeros((nx, ny, nz, 3))
-            for i, vec in enumerate([meta['xvec'], meta['yvec'], meta['zvec']]):
-                points += grid[i][..., None] * np.array(vec)
-
-            points += np.array(meta['org'])
-
-            # If coordinate_permutation is provided, apply it to the points
-            if coordinate_permutation is not None:
-                points = points[..., coordinate_permutation]
-                # Also permute the grid vectors and origin accordingly
-                meta['xvec'], meta['yvec'], meta['zvec'] = [meta[vec]
-                                                            for vec in ['xvec', 'yvec', 'zvec']]
-                vecs = [meta['xvec'], meta['yvec'], meta['zvec']]
-                vecs = [vecs[i] for i in coordinate_permutation]
-                meta['xvec'], meta['yvec'], meta['zvec'] = vecs
-                meta['org'] = [meta['org'][i] for i in coordinate_permutation]
-
-            # Store points in meta for further use
-            meta['points'] = points
 
         return data, meta
 
     @classmethod
-    def load(cls, cube_file_path, cube_format='ORCA', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
+    def load_cube(cls, cube_file_path):
         # Read cube file and extract data and essential metadata
-        data, meta = cls.read_cube(
-            cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
+        data, meta = cls.read_cube(cube_file_path)
 
         # Return an instance of ElectronDensity initialized with data and essential metadata
-        return cls(data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
+        return cls(data, meta['org'], meta['lat1'], meta['lat2'], meta['lat3'])
 
     def copy(self):
         """
@@ -251,9 +172,9 @@ class ScalarField:
         # Create a new instance of ElectronDensity with the same attributes as the original instance
         return ScalarField(np.copy(self.scalar_field),
                            np.copy(self.org),
-                           np.copy(self.xvec),
-                           np.copy(self.yvec),
-                           np.copy(self.zvec))
+                           np.copy(self.lat3),
+                           np.copy(self.lat2),
+                           np.copy(self.lat1))
 
     def rotate(self, rotation_matrix):
         assert rotation_matrix.shape == (
@@ -264,9 +185,9 @@ class ScalarField:
         assert np.isclose(np.linalg.det(rotation_matrix),
                           1), "Determinant of rotation matrix is not 1"
 
-        self.xvec = np.dot(rotation_matrix, self.xvec)
-        self.yvec = np.dot(rotation_matrix, self.yvec)
-        self.zvec = np.dot(rotation_matrix, self.zvec)
+        self.lat3 = np.dot(rotation_matrix, self.lat3)
+        self.lat2 = np.dot(rotation_matrix, self.lat2)
+        self.lat1 = np.dot(rotation_matrix, self.lat1)
         self.org = np.dot(rotation_matrix, self.org)
 
     def translate(self, translation_vector):
@@ -320,7 +241,7 @@ class ScalarField:
 
         # Calculate the difference of the scalar fields and create a new instance
         difference = self.scalar_field - other_resampled.scalar_field
-        return ScalarField(difference, self.org, self.xvec, self.yvec, self.zvec)
+        return ScalarField(difference, self.org, self.lat3, self.lat2, self.lat1)
 
     def scalar_field_along_line(self, start_point, end_point, num_points=100) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -345,10 +266,10 @@ class ScalarField:
         line_points = np.linspace(start_point, end_point, num_points)
 
         # Prepare grid data for interpolation
-        nx, ny, nz = self.dimensions
-        x = np.linspace(0, nx - 1, nx)
-        y = np.linspace(0, ny - 1, ny)
-        z = np.linspace(0, nz - 1, nz)
+        n1, n2, n3 = self.dimensions
+        x = np.linspace(0, n1 - 1, n1)
+        y = np.linspace(0, n2 - 1, n2)
+        z = np.linspace(0, n3 - 1, n3)
 
         # Create the interpolator
         interpolator = RegularGridInterpolator(
@@ -356,7 +277,7 @@ class ScalarField:
 
         # Transform line_points to the scalar field's coordinate space
         transformed_points = (
-            line_points - self.org) @ np.linalg.inv(np.array([self.xvec, self.yvec, self.zvec]))
+            line_points - self.org) @ np.linalg.inv(np.array([self.lat3, self.lat2, self.lat1]))
 
         # Sample the scalar field along the transformed line points
         line_values = interpolator(transformed_points)
@@ -368,6 +289,7 @@ class ScalarField:
                grid_points_color="r", grid_points_size=5, save=None, show=False, smooth_surface=True,
                show_filtered_points=False, point_value_range=(0.0, 1.0)):
 
+        # Initialize plotter if not provided
         if plotter is None:
             if save:
                 plotter = pv.Plotter(notebook=False, off_screen=True,
@@ -375,14 +297,23 @@ class ScalarField:
             else:
                 plotter = pv.Plotter(notebook=notebook)
 
-        nx, ny, nz = self.dimensions
-        x, y, z = self.points.T.reshape(3, nx, ny, nz)
-        grid = pv.StructuredGrid(x, y, z)
+        # Extract lattice coordinates from points
+        n1, n2, n3 = self.dimensions
+        coord1, coord2, coord3 = self.points[...,
+                                             0], self.points[..., 1], self.points[..., 2]
+
+        # Create structured grid using the arbitrary lattice-based coordinates
+        grid = pv.StructuredGrid(coord1, coord2, coord3)
+
+        # Assign scalar field values to the grid
+        grid["scalar_field"] = self.scalar_field.ravel(
+            order='F')  # 'F' order to ensure correct reshaping
 
         # Display isosurface
         if isosurface_value is not None:
             contour = grid.contour(
-                scalars=self.scalar_field.ravel(), isosurfaces=[isosurface_value])
+                scalars="scalar_field", isosurfaces=[isosurface_value]
+            )
             try:
                 if smooth_surface:
                     contour = contour.subdivide(nsub=2, subfilter='loop')
@@ -394,8 +325,8 @@ class ScalarField:
                 mean_value = np.mean(self.scalar_field)
                 std_dev = np.std(self.scalar_field)
                 print(f"Error: Input mesh for subdivision must be all triangles.")
-                print(f"Your isovalue ({
-                      isosurface_value}) may be far from the scalar field distribution.")
+                print(
+                    f"Your isovalue({isosurface_value}) may be far from the scalar field distribution.")
                 print(f"Mean value of scalar field: {mean_value}")
                 print(f"Standard deviation of scalar field: {std_dev}")
                 mean_value = np.mean(np.abs(self.scalar_field))
@@ -418,8 +349,6 @@ class ScalarField:
         # Display filtered points based on value range
         if show_filtered_points:
             # Flatten the points array to correspond with the flattened scalar_field
-            nx, ny, nz = self.dimensions
-            # Reshape points to (N, 3) where N = nx * ny * nz
             points_flattened = self.points.reshape(-1, 3)
 
             # Flatten the scalar_field array and create the boolean mask
@@ -456,9 +385,9 @@ class ScalarField:
 
         # Extracting some information
         info.append(f"Org: {self.org}")
-        info.append(f"Xvec: {self.xvec}")
-        info.append(f"Yvec: {self.yvec}")
-        info.append(f"Zvec: {self.zvec}")
+        info.append(f"lat1 (x): {self.lat3}")
+        info.append(f"lat2 (y): {self.lat2}")
+        info.append(f"lat3 (z): {self.lat1}")
 
         # Find the maximum value of scalar field and its coordinates
         max_density_idx = np.argmax(self.scalar_field)

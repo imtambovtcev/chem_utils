@@ -24,6 +24,8 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 from .constants import BOHR_TO_ANGSTROM
+
+from .constants import BOHR_TO_ANGSTROM
 from .scalar_field import ScalarField
 from .valency import add_valency, general_print, rebond
 
@@ -270,23 +272,87 @@ class Molecule(Atoms):
         return molecule
 
     @classmethod
-    def load_from_cube(cls, cube_file_path, cube_format='ORCA', name='Electron density', vector_permutation=None, axis_permutation=None, coordinate_permutation=None):
+    def load_from_cube(cls, cube_file_path, name='Electron density'):
         # Use the ElectronDensity class method to read cube file
         data, meta = ScalarField.read_cube(
-            cube_file_path, cube_format=cube_format, vector_permutation=vector_permutation, axis_permutation=axis_permutation, coordinate_permutation=coordinate_permutation)
+            cube_file_path)
 
         # Extract atoms information from meta
         atoms_info = meta['atoms']
         numbers = [atomic_number for atomic_number, _ in atoms_info]
-        positions = [np.array(coordinates[1:]) *
-                     BOHR_TO_ANGSTROM for _, coordinates in atoms_info]
+        positions = [coordinates for _, coordinates in atoms_info]
 
         # Create a Molecule instance with the extracted atomic numbers and positions
         molecule = cls(numbers=numbers, positions=positions)
 
         # Create an ScalarField instance and adds it to the molecule's scalar_fields dictionary
         molecule.scalar_fields[name] = ScalarField(
-            data, meta['org'], meta['xvec'], meta['yvec'], meta['zvec'])
+            data, meta['org'], meta['lat1'], meta['lat2'], meta['lat3'])
+
+        return molecule
+
+    @classmethod
+    def load_from_gpaw(cls, filename: str | pathlib.Path, coverage="all"):
+        from gpaw import restart
+
+        def get_orbital_range(calc, coverage="all"):
+            """
+            Determine the range of orbitals for a given GPAW calculation.
+
+            Parameters:
+            calc (GPAW calculator object): GPAW calculation with wavefunctions.
+            coverage (str): Specify which orbitals to cover. Options are:
+                            "all" - Covers all orbitals (default).
+                            "occupied" - Covers only the occupied orbitals.
+                            "unoccupied" - Covers only the unoccupied orbitals.
+
+            Returns:
+            tuple: (i, a) where 'i' is the offset from HOMO, and 'a' is the number of orbitals above LUMO.
+            """
+            f_n = calc.wfs.kpt_u[0].f_n  # Assuming spin-unpolarized case for simplicity
+            nlumo = len(f_n[f_n > 0])
+            nhomo = nlumo - 1
+
+            if coverage == "all":
+                i = -nhomo  # Start from the lowest occupied orbital
+                a = len(f_n) - nlumo-1  # Include all unoccupied orbitals
+            elif coverage == "occupied":
+                i = -nhomo  # Start from the lowest occupied orbital
+                a = 0  # Do not include any unoccupied orbitals
+            elif coverage == "unoccupied":
+                i = 0  # Start from the LUMO
+                a = len(f_n) - nlumo-1  # Include all unoccupied orbitals
+            else:
+                raise ValueError(
+                    "Invalid coverage option. Choose 'all', 'occupied', or 'unoccupied'.")
+
+            return i, a
+        # Restart GPAW calculation
+        atoms, calc = restart(str(filename), txt=None)
+        molecule = cls(atoms)
+
+        i, a = get_orbital_range(calc, coverage=coverage)
+
+        all_electron_density = calc.get_all_electron_density(gridrefinement=1)
+        org = np.array([0., 0., 0.])
+        lat1 = calc.wfs.gd.h_cv[0]*BOHR_TO_ANGSTROM
+        lat2 = calc.wfs.gd.h_cv[1]*BOHR_TO_ANGSTROM
+        lat3 = calc.wfs.gd.h_cv[2]*BOHR_TO_ANGSTROM
+
+        molecule.scalar_fields['All electron density'] = ScalarField(
+            all_electron_density, org, lat1, lat2, lat3)
+
+        for s in range(1):
+            f_n = calc.wfs.kpt_u[s].f_n
+
+            # Determine indices of HOMO and LUMO
+            nlumo = len(f_n[f_n > 0])
+            nhomo = nlumo - 1
+            for n in range(nhomo + i, nlumo + a + 1):
+                # Retrieve the wavefunction for the given orbital
+                orb = calc.get_pseudo_wave_function(band=n, spin=s)
+                molecule.scalar_fields[f'Orbital {n}'] = ScalarField(
+                    orb, org, lat1, lat2, lat3)
 
         return molecule
 
@@ -438,7 +504,7 @@ class Molecule(Atoms):
         G.remove_edge(bond[0], bond[1])
         return list(nx.shortest_path(G, bond[0]).keys()), list(nx.shortest_path(G, bond[1]).keys())
 
-    def divide_in_two_fragments(self, fragment_attach_atom, fragment_atoms_ids):
+    def divide_in_two_fragments(self, fragment_attach_atom, fragment_atoms_ids, vector_mode='both'):
         """
         fragment_attach_atom - atom in fragment that is attached to the rest of the molecule
         fragment_atoms_ids - ids of the atoms fragments
@@ -455,10 +521,20 @@ class Molecule(Atoms):
             zip(small_fragment_ids, range(len(small_fragment_ids))))
         new_main_fragment_ids = dict(
             zip(main_fragment_ids, range(len(main_fragment_ids))))
-        V0_s, V1_s, V2_s, V3_s = fragment_vectors(
+        _V0_s, _V1_s, _V2_s, _V3_s = fragment_vectors(
             new_small_fragment_ids[fragment_attach_atom], self.get_positions()[small_fragment_ids, :])
-        V0_m, V1_m, V2_m, V3_m = fragment_vectors(
+        _V0_m, _V1_m, _V2_m, _V3_m = fragment_vectors(
             new_main_fragment_ids[fragment_attach_atom], self.get_positions()[main_fragment_ids, :])
+
+        if vector_mode == 'both':
+            V1_s, V2_s, V3_s = _V1_s, _V2_s, _V3_s
+            V1_m, V2_m, V3_m = _V1_m, _V2_m, _V3_m
+        elif vector_mode == 'main':
+            V1_s, V2_s, V3_s = -_V1_m, -_V2_m, -_V3_m
+            V1_m, V2_m, V3_m = _V1_m, _V2_m, _V3_m
+        elif vector_mode == 'small':
+            V1_s, V2_s, V3_s = _V1_s, _V2_s, _V3_s
+            V1_m, V2_m, V3_m = -_V1_s, -_V2_s, -_V3_s
 
         R_s = np.column_stack([V1_s, V2_s, V3_s])
         R_m = np.column_stack([V1_m, V2_m, V3_m])

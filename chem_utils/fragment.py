@@ -7,7 +7,7 @@ from ase import Atoms
 from .molecule import Molecule, fragment_vectors
 
 
-def add_vector_to_plotter(p, r0, v, color='blue'):
+def add_vector_to_plotter(p, r0, v, color='blue', scale_factor=1.0):
     # Create a single point from the origin
     points = pv.PolyData(r0)
 
@@ -15,9 +15,9 @@ def add_vector_to_plotter(p, r0, v, color='blue'):
     # Making sure the vector is a 2D array with shape (n_points, 3)
     points['Vectors'] = np.array([v])
 
-    # Generate arrows
-    arrows = points.glyph(orient='Vectors', scale=False,
-                          factor=1.0, geom=pv.Arrow())
+    # Generate arrows with scaling factor
+    arrows = points.glyph(orient='Vectors', scale=True,
+                          factor=scale_factor, geom=pv.Arrow())
 
     # Add arrows to the plotter
     p.add_mesh(arrows, color=color)
@@ -101,13 +101,29 @@ class Fragment(Molecule):
         # Convert the reordered molecule to a Fragment instance and return
         return Fragment(reordered_molecule, attach_atom=new_attach_atom, attach_matrix=self.attach_matrix)
 
-    def fragment_vectors_render(self, plotter: pv.Plotter = None, notebook=False):
+    def main_vectors_render(self, plotter: pv.Plotter = None, notebook=False):
         if plotter is None:
             plotter = pv.Plotter(notebook=notebook)
         V0, V1, V2, V3 = self.fragment_vectors
-        add_vector_to_plotter(plotter, V0, V1, color='red')
-        add_vector_to_plotter(plotter, V0, V2, color='green')
-        add_vector_to_plotter(plotter, V0, V3, color='blue')
+        add_vector_to_plotter(plotter, V0, V1, color='red', scale_factor=1.0)
+        add_vector_to_plotter(plotter, V0, V2, color='green', scale_factor=0.7)
+        add_vector_to_plotter(plotter, V0, V3, color='blue', scale_factor=0.7)
+        return plotter
+
+    def get_main_vectors(self):
+        V0 = self.attach_point
+        V1 = self.attach_matrix[:, 0]
+        V2 = self.attach_matrix[:, 1]
+        V3 = self.attach_matrix[:, 2]
+        return V0, V1, V2, V3
+
+    def main_vectors_render(self, plotter: pv.Plotter = None, notebook=False):
+        if plotter is None:
+            plotter = pv.Plotter(notebook=notebook)
+        V0, V1, V2, V3 = self.get_main_vectors()
+        add_vector_to_plotter(plotter, V0, V1, color='red', scale_factor=1.0)
+        add_vector_to_plotter(plotter, V0, V2, color='green', scale_factor=0.7)
+        add_vector_to_plotter(plotter, V0, V3, color='blue', scale_factor=0.7)
         return plotter
 
     def apply_transition(self, r0):
@@ -121,8 +137,7 @@ class Fragment(Molecule):
         self.attach_matrix = np.dot(R, self.attach_matrix)
 
     def get_origin_rotation_matrix(self):
-        V0, V1, V2, V3 = self.fragment_vectors
-        return np.linalg.inv(np.column_stack([V1, V2, V3]))
+        return np.linalg.inv(self.attach_matrix)
 
     def set_to_origin(self):
         self.apply_transition(-self.attach_point)
@@ -130,10 +145,10 @@ class Fragment(Molecule):
 
     def render(self, **kwargs):
         if 'plotter' in kwargs:
-            plotter = self.fragment_vectors_render(kwargs['plotter'])
+            plotter = self.main_vectors_render(kwargs['plotter'])
         else:
             notebook = kwargs.get('Notebook', False)
-            plotter = self.fragment_vectors_render(None, notebook=notebook)
+            plotter = self.main_vectors_render(None, notebook=notebook)
 
         # Update the plotter in kwargs before calling super
         kwargs['plotter'] = plotter
@@ -143,8 +158,8 @@ class Fragment(Molecule):
         # Get the plotter from kwargs or default to None
         plotter = kwargs.get('plotter', None)
 
-        # Process the plotter using fragment_vectors_render
-        plotter = self.fragment_vectors_render(plotter)
+        # Process the plotter using main_vectors_render
+        plotter = self.main_vectors_render(plotter)
 
         # Update the plotter in kwargs
         kwargs['plotter'] = plotter
@@ -178,9 +193,9 @@ class Fragment(Molecule):
             scale_factor = 0.01
             while len(molecule.get_all_bonds()) != len(self.get_all_bonds()) + len(_fragment.get_all_bonds()):
                 print(
-                    f'{len(molecule.get_all_bonds()) = } {len(self.get_all_bonds()) + len(_fragment.get_all_bonds()) = }')
+                    f'{len(molecule.get_all_bonds())=} {len(self.get_all_bonds()) + len(_fragment.get_all_bonds())=}')
                 scale_factor += 0.01
-                print(f'{scale_factor = }')
+                print(f'{scale_factor=}')
                 _fragment = fragment.copy()
                 _fragment.set_to_origin()
                 random_matrix = np.random.rand(3, 3) * scale_factor
