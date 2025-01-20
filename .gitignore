@@ -56,3 +56,5 @@ dist/
 *.egg-info/
 
 .vscode/
+
+examples/*.png
